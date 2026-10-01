@@ -25,7 +25,7 @@ Este documento define a arquitetura, padrões de engenharia, stack tecnológica 
 - **Framework Web**: Fastify 5 com `fastify-type-provider-zod`.
 - **Validação de Schemas**: Zod 4.
 - **Banco de Dados & ORM**: PostgreSQL via Prisma 7 utilizando driver adapter `@prisma/adapter-pg`.
-- **Autenticação**: `@fastify/jwt` (`JWT_SECRET` e `JWT_EXPIRES_IN` via `src/lib/env.ts`).
+- **Autenticação**: `@fastify/jwt` e `fastify-plugin` (`JWT_SECRET` e `JWT_EXPIRES_IN` via `src/lib/env.ts`). O Fastify não usa middleware no estilo Express: autenticação e RBAC são um plugin que decora a instância (`app.authenticate`, `app.authorize`) e as rotas aplicam esses hooks.
 - **Comunicação e Uploads**: Nodemailer (e-mails transacionais), Cloudinary (imagens/arquivos), Stripe (faturamento/mensalidades).
 
 ---
@@ -62,10 +62,15 @@ opensga-api/
     │   ├── mailer.ts               # Nodemailer
     │   ├── cloudinary.ts           # Uploads
     │   └── stripe.ts               # Pagamentos
-    ├── middlewares/                # Auth JWT e verificação de Roles (RBAC)
-    │   ├── authenticate.ts
-    │   └── authorize.ts
+    ├── plugins/                    # Plugins Fastify que quebram o encapsulamento (fastify-plugin)
+    │   └── authenticate.ts         # Decorators authenticate (JWT) e authorize (RBAC)
     ├── modules/                    # Módulos da arquitetura hexagonal
+    │   ├── auth/                   # Login unificado, JWT e perfil do usuário logado
+    │   │   ├── auth-route.ts
+    │   │   ├── auth-controller.ts
+    │   │   ├── auth-service.ts
+    │   │   ├── auth-repository.ts
+    │   │   └── auth-schemas.ts
     │   ├── academic/               # Cursos, Matrizes, Componentes, Turmas
     │   │   ├── academic-route.ts
     │   │   ├── academic-controller.ts
@@ -79,7 +84,19 @@ opensga-api/
     └── index.ts                    # Bootstrap da aplicação Fastify
 ```
 
-Os módulos `enrollment`, `grading`, `financial` e `users` seguem o mesmo conjunto de arquivos do módulo `academic`.
+Os módulos `auth`, `enrollment`, `grading`, `financial` e `users` seguem o mesmo conjunto de arquivos do módulo `academic`.
+
+### Plugins Fastify (não middlewares)
+
+O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `src/middlewares/` nem `app.use()` para auth.
+
+- Registrar `@fastify/jwt` em `src/index.ts` antes de `authPlugin`.
+- `src/plugins/authenticate.ts` usa `fastify-plugin` (`fp`) para publicar decorators na instância pai:
+  - `app.authenticate`: decorator aplicado em `onRequest` da rota; chama `request.jwtVerify()`.
+  - `app.authorize(roles)`: decorator aplicado em `preHandler`; confere `request.user.role` contra o enum `Role`.
+- Rotas protegidas declaram esses hooks na própria rota. Login permanece público.
+- Exemplo: `onRequest: [app.authenticate]` e, quando a rota exige perfil, `preHandler: [app.authorize([Role.ADMIN])]`.
+- `onRequest` roda antes de `preHandler`, então a autorização só executa depois do JWT válido.
 
 ### Código Compartilhado
 
@@ -111,7 +128,9 @@ Os módulos `enrollment`, `grading`, `financial` e `users` seguem o mesmo conjun
    - Data e hora com timestamp: utilizar exclusivamente `z.iso.datetime()`.
    - Horário (`HH:mm:ss`): utilizar `z.iso.time()`.
    - Duração: utilizar `z.iso.duration()`.
-   - **PROIBIDO**: `z.string().date()`, `z.string().datetime()`, `z.string().time()`, `z.string().duration()`.
+   - E-mail: utilizar exclusivamente `z.email()`.
+   - UUID: utilizar exclusivamente `z.uuid()`.
+   - **PROIBIDO**: `z.string().date()`, `z.string().datetime()`, `z.string().time()`, `z.string().duration()`, `z.string().email()`, `z.string().uuid()`.
 3. **Enums**: Campos que espelham enums do Prisma devem utilizar `z.enum(NomeDoEnum)` importados de `src/generated/prisma/enums.js`, nunca `z.string()`.
 
 ---
@@ -151,6 +170,7 @@ Ao implementar código neste projeto:
 2. Nunca acesse o Prisma Client diretamente nos controllers ou services; isole as queries no repository.
 3. Valide todas as entradas de rotas Fastify com schemas Zod tipados via `withTypeProvider<ZodTypeProvider>()`.
 4. Respeite todas as regras de sintaxe Zod 4 e convenções TypeScript listadas neste documento.
+5. Autenticação e RBAC ficam no plugin `src/plugins/authenticate.ts`. Proteja rotas com `onRequest` / `preHandler`. Não crie middlewares Express.
 
 ## 8. Git
 

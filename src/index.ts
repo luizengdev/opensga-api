@@ -8,6 +8,8 @@ import Fastify from "fastify";
 import {jsonSchemaTransform, serializerCompiler, validatorCompiler, ZodTypeProvider} from "fastify-type-provider-zod";
 
 import {env} from "./lib/env.js";
+import {authRoutes} from "./modules/auth/auth-route.js";
+import {authPlugin} from "./plugins/authenticate.js";
 
 const envToLogger = {
   development: {
@@ -38,12 +40,23 @@ await app.register(jwt, {
   sign: {expiresIn: env.JWT_EXPIRES_IN},
 });
 
+await app.register(authPlugin);
+
 await app.register(fastifySwagger, {
   openapi: {
     info: {
       title: "OpenSGA-api",
       description: "API de Sistema de Gestão Acadêmica",
       version: "1.0.0",
+    },
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          bearerFormat: "JWT",
+        },
+      },
     },
     servers: [
       {
@@ -72,6 +85,8 @@ app.withTypeProvider<ZodTypeProvider>().route({
     return app.swagger();
   },
 });
+
+await app.register(authRoutes, {prefix: "/api/v1"});
 
 const startServer = async () => {
   try {
