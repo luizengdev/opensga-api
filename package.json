@@ -10,7 +10,7 @@
     "build": "tsc",
     "db:generate": "prisma generate --config prisma7.config.ts",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio --browser none"
   },
   "engines": {
     "node": "24.x"
