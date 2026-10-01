@@ -1,0 +1,163 @@
+---
+description: Contexto do projeto, arquitetura, stack, padrões de código e regras regulatórias MEC do OpenSGA-api
+alwaysApply: true
+---
+
+# OpenSGA-api — Project Context & Development Rules
+
+Este documento define a arquitetura, padrões de engenharia, stack tecnológica e regras regulatórias do Sistema de Gestão Acadêmica e ERP Universitário (padrão MEC / IES brasileiras).
+
+---
+
+## 1. Visão Geral e Arquitetura
+
+- **Modelo**: Repositórios (Backend API REST).
+- **Padrão Backend**: Arquitetura Hexagonal (Ports & Adapters) orientada a módulos de domínio.
+- **Perfis de Acesso (RBAC)**: `ADMIN`, `PROFESSOR`, `ALUNO`, `RESPONSAVEL`.
+
+---
+
+## 2. Stack Tecnológica
+
+### Backend
+
+- **Runtime**: Node.js 24 (`"type": "module"` com target `ES2024`).
+- **Framework Web**: Fastify 5 com `fastify-type-provider-zod`.
+- **Validação de Schemas**: Zod 4.
+- **Banco de Dados & ORM**: PostgreSQL via Prisma 7 utilizando driver adapter `@prisma/adapter-pg`.
+- **Autenticação**: `@fastify/jwt` (`JWT_SECRET` e `JWT_EXPIRES_IN` via `src/lib/env.ts`).
+- **Comunicação e Uploads**: Nodemailer (e-mails transacionais), Cloudinary (imagens/arquivos), Stripe (faturamento/mensalidades).
+
+---
+
+## 3. Padrões de Estrutura de Arquivos e Nomenclatura
+
+### Nomes de Arquivo no Backend
+
+Cada módulo em `src/modules/<modulo>/` deve conter estritamente:
+
+- `<modulo>-route.ts` -> Declaração de rotas Fastify e schemas OpenAPI/Swagger.
+- `<modulo>-controller.ts` -> Handlers de requisição/resposta HTTP e parsing de DTOs.
+- `<modulo>-service.ts` -> Regras de negócio, cálculos acadêmicos e orquestração.
+- `<modulo>-repository.ts` -> Acesso a dados, queries e transações Prisma (`db.$transaction`).
+- `<modulo>-schemas.ts` -> Schemas de validação Zod e interfaces tipadas via `z.infer`.
+- `<modulo>-entity.ts` -> Interfaces e tipos de entidades de domínio (quando aplicável).
+
+Estrutura alvo do repositório (o código ainda está em construção; siga este layout ao criar arquivos):
+
+```text
+opensga-api/
+├── prisma/
+│   └── schema.prisma
+├── prisma7.config.ts
+├── eslint.config.js
+├── package.json
+├── tsconfig.json
+└── src/
+    ├── generated/
+    │   └── prisma/                 # Gerado pelo Prisma Client 7
+    ├── lib/                        # Utilitários compartilhados
+    │   ├── db.ts                   # Instância do Prisma com @prisma/adapter-pg
+    │   ├── env.ts                  # Validação de variáveis de ambiente com Zod
+    │   ├── mailer.ts               # Nodemailer
+    │   ├── cloudinary.ts           # Uploads
+    │   └── stripe.ts               # Pagamentos
+    ├── middlewares/                # Auth JWT e verificação de Roles (RBAC)
+    │   ├── authenticate.ts
+    │   └── authorize.ts
+    ├── modules/                    # Módulos da arquitetura hexagonal
+    │   ├── academic/               # Cursos, Matrizes, Componentes, Turmas
+    │   │   ├── academic-route.ts
+    │   │   ├── academic-controller.ts
+    │   │   ├── academic-service.ts
+    │   │   ├── academic-repository.ts
+    │   │   └── academic-schemas.ts
+    │   ├── enrollment/             # Matrícula, RA e Alocação
+    │   ├── grading/                # Diário de Classe, Notas (A1, A2, AF) e Faltas
+    │   ├── financial/              # Faturas e Webhooks Stripe
+    │   └── users/                  # Professores, Alunos, Responsáveis e Admins
+    └── index.ts                    # Bootstrap da aplicação Fastify
+```
+
+Os módulos `enrollment`, `grading`, `financial` e `users` seguem o mesmo conjunto de arquivos do módulo `academic`.
+
+### Código Compartilhado
+
+- Centralizado em `src/lib/` com nomes curtos: `env.ts`, `db.ts`, `mailer.ts`, `stripe.ts`, `cloudinary.ts`.
+- Prisma Client gerado em `src/generated/prisma/` e instanciado exclusivamente em `src/lib/db.ts`.
+
+---
+
+## 4. Regras Estritas de TypeScript e Código
+
+1. **TypeScript Puro**: Proibido criar arquivos `.js` no código fonte; **nunca**** utilizar `any` (usar `unknown` ou tipagem genérica).
+2. **Importações ES Modules**: No backend, todas as importações relativas devem explicitar a extensão `.js` (ex: `import { db } from "../../lib/db.js";`).
+3. **Exports**: Priorizar **Named Exports** em todos os arquivos (`export const ...`).
+4. **Interfaces vs Types**: Utilizar `interface` para objetos e DTOs; reservar `type` exclusivamente para uniões, tuplas ou mapped types.
+5. **Funções**:
+   - Preferir arrow functions (`export const executeEnrollment = async (...) => {}`).
+   - Nomear funções como verbos imperativos (`createNewMatriz`, `findUserByCpf`, `calculateAndSaveGrades`).
+   - Aplicar **Early Return** para eliminar condicionais aninhadas.
+   - Funções com mais de 2 parâmetros devem obrigatoriamente receber um objeto desestruturado.
+   - Utilizar métodos imutáveis (`map`, `filter`, `reduce`) em substituição a loops `for/while`.
+
+---
+
+## 5. Regras de Datas, Timestamps e Validação Zod 4
+
+1. **Banco de Dados (Prisma)**: Todo campo de data/hora no banco deve ser `DateTime` anotado com `@db.Timestamptz()`.
+2. **Borda HTTP com Zod 4**:
+   - Data no formato `YYYY-MM-DD`: utilizar exclusivamente `z.iso.date()`.
+   - Data e hora com timestamp: utilizar exclusivamente `z.iso.datetime()`.
+   - Horário (`HH:mm:ss`): utilizar `z.iso.time()`.
+   - Duração: utilizar `z.iso.duration()`.
+   - **PROIBIDO**: `z.string().date()`, `z.string().datetime()`, `z.string().time()`, `z.string().duration()`.
+3. **Enums**: Campos que espelham enums do Prisma devem utilizar `z.enum(NomeDoEnum)` importados de `src/generated/prisma/enums.js`, nunca `z.string()`.
+
+---
+
+## 6. Regras de Negócio e Modelo Regulatório IES (MEC)
+
+### A. Matriz Curricular vs. Disciplina Global
+
+- `Disciplina` é uma entidade global (ex: _Cálculo I_, _Ética_). Evita duplicação no banco.
+- `MatrizCurricular` representa o versionamento curricular de um curso por ano/semestre de vigência.
+- `MatrizComponente` é a tabela pivot que conecta `MatrizCurricular` à `Disciplina`, definindo:
+  - `semestreIdeal`
+  - `tipo` (`CORE_VIDA_CARREIRA`, `ESPECIFICO`, `ELETIVA_TRILHA`, `EXTENSAO`, `OPTATIVO`)
+  - `tipoEntrega` (`PRESENCIAL_FISICO`, `SINCRONO_MEDIADO`, `ASSINCRONO_DIGITAL`)
+  - Distribuição horária: `chTotal = chPresencial + chSincrona + chAssincrona`.
+  - `chExtensao`: Horas destinadas à extensão curricular.
+
+### B. Conformidade Regulatória MEC
+
+- **Curricularização da Extensão (Resolução CNE/CES 7/2018)**: $\sum \text{chExtensao} \ge 10\% \text{ da } \sum \text{chTotal}$ da matriz curricular.
+- **Marco Regulatório EAD**: Controle de percentual presencial e síncrono por polo/campus.
+
+### C. Avaliação e Rendimento Acadêmico
+
+- **Fórmula Padrão Semestral**: $\text{Média Semestral} = (A1 \times 0.4) + (A2 \times 0.6)$.
+- **Aprovação Direta**: $\text{Média Semestral} \ge 6.0$ e $\text{Faltas} \le 25\%$ da `chTotal`.
+- **Avaliação Final (AF)**: Se $\text{Média Semestral} < 6.0$, aplica-se AF. Média Final $= (\text{Média Semestral} + AF) / 2$. Aprovado se $\ge 5.0$.
+- **Integralização**: A `chCumprida` da disciplina só é creditada no histórico do aluno se `aprovado = true`.
+
+---
+
+## 7. Instrução de Prompt para Modelos de IA
+
+Ao implementar código neste projeto:
+
+1. Siga a separação estrita de camadas (`route` -> `controller` -> `service` -> `repository` -> `schemas`).
+2. Nunca acesse o Prisma Client diretamente nos controllers ou services; isole as queries no repository.
+3. Valide todas as entradas de rotas Fastify com schemas Zod tipados via `withTypeProvider<ZodTypeProvider>()`.
+4. Respeite todas as regras de sintaxe Zod 4 e convenções TypeScript listadas neste documento.
+
+## 8. Git
+
+- **SEMPRE** use [Conventional Commits](https://www.conventionalcommits.org/) para mensagens de commit. Exemplo: `feat: add start workout session endpoint`, `fix: workout plan validation`, `docs: update architecture rules`.
+- **NUNCA** faça commit sem a permissão explícita do usuário. Sempre aguarde o usuário pedir para commitar.
+
+## 9. MCPs
+
+- **SEMPRE** Use Context7 para documentação de bibliotecas, frameworks e CLIs.
+- **SEMPRE** Use Serena para busca e edição semântica de código.

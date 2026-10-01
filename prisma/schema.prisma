@@ -1,0 +1,324 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// --- ENUMS REGULATÓRIOS E DE ACESSO ---
+
+enum Role {
+  ADMIN
+  PROFESSOR
+  ALUNO
+  RESPONSAVEL
+}
+
+enum StatusMatricula {
+  PRE_MATRICULADO
+  ATIVO
+  TRANCADO
+  CANCELADO
+  FORMADO
+  EVADIDO
+}
+
+enum StatusFatura {
+  PENDENTE
+  PAGA
+  ATRASADA
+  CANCELADA
+}
+
+enum TipoReclamacao {
+  FINANCEIRO
+  ACADEMICO
+  SECRETARIA
+  INFRAESTRUTURA
+  OUVIDORIA_GERAL
+}
+
+enum StatusReclamacao {
+  ABERTO
+  EM_ANALISE
+  RESPONDIDO
+  FECHADO
+}
+
+enum ModalidadeCurso {
+  PRESENCIAL
+  SEMIPRESENCIAL
+  EAD
+}
+
+enum TipoComponente {
+  CORE_VIDA_CARREIRA // Disciplinas institucionais comuns do grupo
+  ESPECIFICO // Disciplinas do núcleo técnico da formação
+  ELETIVA_TRILHA // Trilhas de personalização/competências
+  EXTENSAO // Componentes de extensão (10% CNE/CES)
+  OPTATIVO
+}
+
+enum TipoEntrega {
+  PRESENCIAL_FISICO // Encontro físico em sala de aula / polo
+  SINCRONO_MEDIADO // Aulas ao vivo remotas mediadas por tecnologia
+  ASSINCRONO_DIGITAL // Conteúdo gravado / AVA tradicional
+}
+
+// --- MODELOS DE USUÁRIOS E PERFIS ---
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  nome         String   @db.VarChar(150)
+  email        String   @unique @db.VarChar(150)
+  senhaHash    String   @db.VarChar(255)
+  cpf          String   @unique @db.VarChar(14)
+  telefone     String?  @db.VarChar(20)
+  avatarUrl    String?  @db.VarChar(500)
+  role         Role     @default(ALUNO)
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now()) @db.Timestamptz()
+  atualizadoEm DateTime @updatedAt @db.Timestamptz()
+
+  aluno       Aluno?
+  professor   Professor?
+  responsavel Responsavel?
+  reclamacoes Reclamacao[] @relation("ReclamacoesAbertas")
+
+  @@map("users")
+}
+
+model Professor {
+  id           String @id @default(uuid()) @db.Uuid
+  userId       String @unique @db.Uuid
+  matricula    String @unique @db.VarChar(30)
+  titulacao    String @db.VarChar(50) // Graduado, Especialista, Mestre, Doutor
+  departamento String @db.VarChar(100)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  turmas Turma[]
+
+  @@map("professores")
+}
+
+model Responsavel {
+  id         String @id @default(uuid()) @db.Uuid
+  userId     String @unique @db.Uuid
+  parentesco String @db.VarChar(50)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alunos Aluno[] @relation("ResponsavelAlunos")
+
+  @@map("responsaveis")
+}
+
+model Aluno {
+  id             String   @id @default(uuid()) @db.Uuid
+  userId         String   @unique @db.Uuid
+  responsavelId  String?  @db.Uuid
+  ra             String   @unique @db.VarChar(20)
+  dataNascimento DateTime @db.Timestamptz()
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  responsavel Responsavel? @relation("ResponsavelAlunos", fields: [responsavelId], references: [id])
+  matriculas  Matricula[]
+  faturas     Fatura[]
+
+  @@map("alunos")
+}
+
+// --- ESTRUTURA INSTITUCIONAL E ACADÊMICA ---
+
+model Campus {
+  id         String   @id @default(uuid()) @db.Uuid
+  nome       String   @db.VarChar(120)
+  codigoPolo String   @unique @db.VarChar(20)
+  cidade     String   @db.VarChar(100)
+  estado     String   @db.VarChar(2)
+  endereco   String   @db.VarChar(255)
+  criadoEm   DateTime @default(now()) @db.Timestamptz()
+
+  cursos Curso[]
+  turmas Turma[]
+
+  @@map("campi")
+}
+
+model Curso {
+  id               String          @id @default(uuid()) @db.Uuid
+  campusId         String          @db.Uuid
+  nome             String          @db.VarChar(150)
+  codigoMec        String?         @db.VarChar(50)
+  modalidade       ModalidadeCurso @default(PRESENCIAL)
+  duracaoSemestres Int             @default(8)
+  criadoEm         DateTime        @default(now()) @db.Timestamptz()
+
+  campus     Campus             @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  matrizes   MatrizCurricular[]
+  matriculas Matricula[]
+
+  @@map("cursos")
+}
+
+model MatrizCurricular {
+  id          String   @id @default(uuid()) @db.Uuid
+  cursoId     String   @db.Uuid
+  nome        String   @db.VarChar(100)
+  anoVigencia Int
+  ativo       Boolean  @default(true)
+  criadoEm    DateTime @default(now()) @db.Timestamptz()
+
+  curso       Curso              @relation(fields: [cursoId], references: [id], onDelete: Cascade)
+  componentes MatrizComponente[]
+  matriculas  Matricula[]
+
+  @@map("matrizes_curriculares")
+}
+
+model Disciplina {
+  id       String   @id @default(uuid()) @db.Uuid
+  nome     String   @db.VarChar(150)
+  codigo   String   @unique @db.VarChar(20)
+  criadoEm DateTime @default(now()) @db.Timestamptz()
+
+  componentes MatrizComponente[]
+  turmas      Turma[]
+
+  @@map("disciplinas")
+}
+
+model MatrizComponente {
+  id                 String         @id @default(uuid()) @db.Uuid
+  matrizCurricularId String         @db.Uuid
+  disciplinaId       String         @db.Uuid
+  semestreIdeal      Int            @default(1)
+  tipo               TipoComponente @default(ESPECIFICO)
+  tipoEntrega        TipoEntrega    @default(PRESENCIAL_FISICO)
+  chTotal            Int            @default(60)
+  chPresencial       Int            @default(0)
+  chSincrona         Int            @default(0)
+  chAssincrona       Int            @default(0)
+  chExtensao         Int            @default(0)
+
+  matrizCurricular MatrizCurricular @relation(fields: [matrizCurricularId], references: [id], onDelete: Cascade)
+  disciplina       Disciplina       @relation(fields: [disciplinaId], references: [id], onDelete: Cascade)
+
+  @@unique([matrizCurricularId, disciplinaId])
+  @@map("matrizes_componentes")
+}
+
+// --- OFERTA DE TURMAS E ENTURMAÇÃO ---
+
+model Turma {
+  id             String      @id @default(uuid()) @db.Uuid
+  campusId       String      @db.Uuid
+  disciplinaId   String      @db.Uuid
+  professorId    String      @db.Uuid
+  codigo         String      @unique @db.VarChar(50)
+  anoLetivo      Int
+  semestreLetivo Int
+  capacidade     Int         @default(60)
+  horario        String      @db.VarChar(100)
+  salaOuLink     String?     @db.VarChar(255)
+  tipoEntrega    TipoEntrega @default(PRESENCIAL_FISICO)
+  criadoEm       DateTime    @default(now()) @db.Timestamptz()
+
+  campus     Campus         @relation(fields: [campusId], references: [id])
+  disciplina Disciplina     @relation(fields: [disciplinaId], references: [id])
+  professor  Professor      @relation(fields: [professorId], references: [id])
+  diarios    DiarioClasse[]
+
+  @@map("turmas")
+}
+
+model Matricula {
+  id                 String          @id @default(uuid()) @db.Uuid
+  alunoId            String          @db.Uuid
+  cursoId            String          @db.Uuid
+  matrizCurricularId String          @db.Uuid
+  status             StatusMatricula @default(ATIVO)
+  periodoAtual       Int             @default(1)
+  semestreIngresso   String          @db.VarChar(10)
+  criadoEm           DateTime        @default(now()) @db.Timestamptz()
+  atualizadoEm       DateTime        @updatedAt @db.Timestamptz()
+
+  aluno            Aluno            @relation(fields: [alunoId], references: [id], onDelete: Cascade)
+  curso            Curso            @relation(fields: [cursoId], references: [id])
+  matrizCurricular MatrizCurricular @relation(fields: [matrizCurricularId], references: [id])
+  diarios          DiarioClasse[]
+
+  @@map("matriculas")
+}
+
+model DiarioClasse {
+  id           String   @id @default(uuid()) @db.Uuid
+  matriculaId  String   @db.Uuid
+  turmaId      String   @db.Uuid
+  notaA1       Decimal? @db.Decimal(4, 2)
+  notaA2       Decimal? @db.Decimal(4, 2)
+  notaAF       Decimal? @db.Decimal(4, 2)
+  notaFinal    Decimal? @db.Decimal(4, 2)
+  totalFaltas  Int      @default(0)
+  chCumprida   Int      @default(0)
+  aprovado     Boolean?
+  criadoEm     DateTime @default(now()) @db.Timestamptz()
+  atualizadoEm DateTime @updatedAt @db.Timestamptz()
+
+  matricula Matricula @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
+  turma     Turma     @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+
+  @@unique([matriculaId, turmaId])
+  @@map("diarios_classe")
+}
+
+// --- FINANCEIRO, COMUNICADOS E OUVIDORIA ---
+
+model Fatura {
+  id               String       @id @default(uuid()) @db.Uuid
+  alunoId          String       @db.Uuid
+  descricao        String       @db.VarChar(255)
+  valor            Decimal      @db.Decimal(10, 2)
+  dataVencimento   DateTime     @db.Timestamptz()
+  status           StatusFatura @default(PENDENTE)
+  stripeInvoiceId  String?      @unique @db.VarChar(100)
+  stripePaymentUrl String?      @db.VarChar(500)
+  pagoEm           DateTime?    @db.Timestamptz()
+  criadoEm         DateTime     @default(now()) @db.Timestamptz()
+
+  aluno Aluno @relation(fields: [alunoId], references: [id], onDelete: Cascade)
+
+  @@map("faturas")
+}
+
+model Comunicado {
+  id          String   @id @default(uuid()) @db.Uuid
+  titulo      String   @db.VarChar(200)
+  conteudo    String   @db.Text
+  publicoAlvo Role[]
+  criadoEm    DateTime @default(now()) @db.Timestamptz()
+
+  @@map("comunicados")
+}
+
+model Reclamacao {
+  id           String           @id @default(uuid()) @db.Uuid
+  usuarioId    String           @db.Uuid
+  assunto      String           @db.VarChar(200)
+  tipo         TipoReclamacao
+  descricao    String           @db.Text
+  resposta     String?          @db.Text
+  status       StatusReclamacao @default(ABERTO)
+  criadoEm     DateTime         @default(now()) @db.Timestamptz()
+  atualizadoEm DateTime         @updatedAt @db.Timestamptz()
+
+  usuario User @relation("ReclamacoesAbertas", fields: [usuarioId], references: [id])
+
+  @@map("reclamacoes")
+}
