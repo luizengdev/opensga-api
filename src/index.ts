@@ -8,7 +8,10 @@ import Fastify from "fastify";
 import {jsonSchemaTransform, serializerCompiler, validatorCompiler, ZodTypeProvider} from "fastify-type-provider-zod";
 
 import {env} from "./lib/env.js";
+import {academicRoutes} from "./modules/academic/academic-route.js";
 import {authRoutes} from "./modules/auth/auth-route.js";
+import {enrollmentRoutes} from "./modules/enrollment/enrollment-route.js";
+import {gradingRoutes} from "./modules/grading/grading-route.js";
 import {authPlugin} from "./plugins/authenticate.js";
 
 const envToLogger = {
@@ -87,6 +90,9 @@ app.withTypeProvider<ZodTypeProvider>().route({
 });
 
 await app.register(authRoutes, {prefix: "/api/v1"});
+await app.register(academicRoutes, {prefix: "/api/v1"});
+await app.register(enrollmentRoutes, {prefix: "/api/v1"});
+await app.register(gradingRoutes, {prefix: "/api/v1"});
 
 const startServer = async () => {
   try {
