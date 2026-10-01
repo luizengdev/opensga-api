@@ -25,7 +25,7 @@ const envSchema = z.object({
   SMTP_PASS: z.string().catch(""),
   SMTP_FROM: z.string().catch(""),
 
-  FRONTEND_URL: z.string().catch(""),
+  FRONTEND_URL: z.string().default("http://localhost:5173"),
 });
 
 export const env = envSchema.parse(process.env);

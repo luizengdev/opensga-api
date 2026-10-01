@@ -1,15 +1,54 @@
-import fastify from "fastify";
+import cors from "@fastify/cors";
+import jwt from "@fastify/jwt";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
+import Fastify from "fastify";
+import {jsonSchemaTransform, serializerCompiler, validatorCompiler} from "fastify-type-provider-zod";
 
 import {env} from "./lib/env.js";
 
-const server = fastify({
-  logger: true,
-});
+export const buildApp = () => {
+  const app = Fastify({logger: true});
 
-server.listen({port: env.PORT}, (err, address) => {
-  if (err) {
-    server.log.error(err);
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+
+  app.register(cors, {
+    origin: env.FRONTEND_URL,
+    credentials: true,
+  });
+
+  app.register(jwt, {
+    secret: env.JWT_SECRET,
+    sign: {expiresIn: env.JWT_EXPIRES_IN},
+  });
+
+  app.register(swagger, {
+    openapi: {
+      info: {
+        title: "OpenSGA-api",
+        description: "API de Sistema de Gestão Acadêmica",
+        version: "1.0.0",
+      },
+    },
+    transform: jsonSchemaTransform,
+  });
+
+  app.register(swaggerUi, {routePrefix: "/docs"});
+
+  return app;
+};
+
+const startServer = async () => {
+  const app = buildApp();
+  try {
+    await app.listen({port: env.PORT, host: "0.0.0.0"});
+    console.log(`🚀 OpenSGA-api executando em http://localhost:${env.PORT}`);
+    console.log(`📑 OpenAPI / Swagger UI: http://localhost:${env.PORT}/docs`);
+  } catch (error) {
+    app.log.error(error);
     process.exit(1);
   }
-  server.log.info(`Server is running on ${address}`);
-});
+};
+
+startServer();
