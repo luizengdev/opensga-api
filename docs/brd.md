@@ -141,10 +141,11 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 
 | Domínio | Capacidade ADMIN exposta |
 | :--- | :--- |
-| Identidade | Login unificado e perfil (`/auth`). CRUD de usuários, professores e administradores; consulta de alunos e responsáveis (`/users`). |
-| Currículo | CRUD de campus, curso, disciplina, matriz, componente e turma (`/academic`). Auditoria MEC da matriz. |
+| Identidade | Login unificado, `GET /auth/me` (ids de aluno/professor e `ativo`) e `PATCH /auth/senha`. CRUD de usuários, professores e administradores; consulta de alunos e responsáveis (`/users`). JWT de conta inativa é recusado. |
+| Currículo | CRUD de campus, curso, disciplina, matriz, componente e turma (`/academic`). Auditoria MEC da matriz. Professor lista/consulta apenas as próprias turmas. |
 | Matrícula | Efetivação, consulta por status, alteração de status e exclusão do vínculo (`/matriculas`). O aluno não é apagado junto com a matrícula. |
-| Diário | Enturmação, listagem, consulta, desenturmação e lançamento de notas/faltas (`/diario`). |
+| Diário | Enturmação ADMIN; listagem/consulta ADMIN+PROFESSOR (filtro JWT); desenturmação ADMIN; lançamento de notas/faltas pelo titular (`PATCH /diario/avaliar`). |
+| Dashboards | `GET /dashboard/admin` e `GET /dashboard/professor` com KPIs do período letivo. |
 | Financeiro | Emissão, consulta, atualização de status e exclusão de faturas (`/financeiro/faturas`). Conciliação automática via webhook Stripe ainda não está exposta. |
 | Comunicação | CRUD de comunicados por público-alvo (`/comunicados`) e fluxo de ouvidoria: abrir, responder, fechar e excluir (`/ouvidoria/reclamacoes`). |
 
