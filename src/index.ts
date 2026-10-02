@@ -11,6 +11,7 @@ import {env} from "./lib/env.js";
 import {academicRoutes} from "./modules/academic/academic-route.js";
 import {authRoutes} from "./modules/auth/auth-route.js";
 import {communicationsRoutes} from "./modules/communications/communications-route.js";
+import {dashboardRoutes} from "./modules/dashboard/dashboard-route.js";
 import {enrollmentRoutes} from "./modules/enrollment/enrollment-route.js";
 import {financialRoutes} from "./modules/financial/financial-route.js";
 import {gradingRoutes} from "./modules/grading/grading-route.js";
@@ -35,6 +36,36 @@ const app = Fastify({logger: envToLogger[env.NODE_ENV]});
 
 app.setValidatorCompiler(validatorCompiler);
 app.setSerializerCompiler(serializerCompiler);
+
+app.setErrorHandler((error: unknown, request, reply) => {
+  const fastifyError = error as {
+    validation?: unknown;
+    statusCode?: number;
+    message: string;
+  };
+
+  if (fastifyError.validation) {
+    return reply.status(400).send({
+      error: "Dados inválidos",
+      message: fastifyError.message,
+    });
+  }
+
+  const statusCode =
+    fastifyError.statusCode !== undefined && fastifyError.statusCode >= 400 ? fastifyError.statusCode : 500;
+
+  if (statusCode >= 500) {
+    request.log.error(error);
+    return reply.status(500).send({
+      error: "Erro interno",
+      message: "Ocorreu um erro inesperado.",
+    });
+  }
+
+  return reply.status(statusCode).send({
+    error: fastifyError.message,
+  });
+});
 
 await app.register(fastifyCors, {
   origin: [env.FRONTEND_URL].filter(Boolean),
@@ -99,6 +130,11 @@ await app.register(enrollmentRoutes, {prefix: "/api/v1"});
 await app.register(gradingRoutes, {prefix: "/api/v1"});
 await app.register(financialRoutes, {prefix: "/api/v1"});
 await app.register(communicationsRoutes, {prefix: "/api/v1"});
+await app.register(dashboardRoutes, {prefix: "/api/v1"});
+
+app.get("/health", async () => {
+  return {status: "ok"};
+});
 
 const startServer = async () => {
   try {
