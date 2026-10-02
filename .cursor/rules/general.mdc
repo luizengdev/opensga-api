@@ -14,6 +14,8 @@ Este documento define a arquitetura, padrões de engenharia, stack tecnológica 
 - **Modelo**: Repositórios (Backend API REST).
 - **Padrão Backend**: Arquitetura Hexagonal (Ports & Adapters) orientada a módulos de domínio.
 - **Perfis de Acesso (RBAC)**: `ADMIN`, `PROFESSOR`, `ALUNO`, `RESPONSAVEL`.
+- **Produto atual**: sistema interno (login unificado + dashboards ADMIN e PROFESSOR). Portal aluno/responsável e site de matrícula ficam para depois — não abrir CRUD self-service desses papéis agora.
+- **Testes / QA**: especificação em [docs/qa-arquitetura-testes.md](docs/qa-arquitetura-testes.md) (regras, CA, BDD `QA-*`). Fonte única para Postman **e** Playwright (`test('QA-…')`). Ao mudar regra de negócio, atualize esse arquivo antes da collection ou do E2E.
 
 ---
 
@@ -71,21 +73,24 @@ opensga-api/
     │   ├── enrollment/             # Matrícula, RA e ciclo de status
     │   ├── grading/                # Diário de Classe, Notas (A1, A2, AF) e Faltas
     │   ├── financial/              # Faturas acadêmicas (webhooks Stripe ainda não)
-    │   └── communications/         # Comunicados institucionais e ouvidoria
-    └── index.ts                    # Bootstrap da aplicação Fastify
+    │   ├── communications/         # Comunicados institucionais e ouvidoria
+    │   └── dashboard/              # KPIs leves ADMIN e PROFESSOR
+    └── index.ts                    # Bootstrap, /health e error handler HTTP
 ```
 
 Todos os módulos seguem o mesmo conjunto de arquivos (`-route`, `-controller`, `-service`, `-repository`, `-schemas`).
 
-Prefixos HTTP atuais (ADMIN, salvo login e lançamento de diário pelo professor):
+Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 
-- `/auth` — login e `GET /me`
-- `/users` — usuários, professores, alunos e responsáveis
-- `/academic` — campi, cursos, disciplinas, matrizes, componentes e turmas
-- `/matriculas` — vínculo acadêmico
-- `/diario` — enturmação, consulta e avaliação
-- `/financeiro/faturas` — contas a receber
-- `/comunicados` e `/ouvidoria/reclamacoes` — mural e ouvidoria
+- `/auth` — login público; `GET /me` e `PATCH /auth/senha` autenticados
+- `/users` — usuários, professores, alunos e responsáveis (`ADMIN`)
+- `/academic` — campi, cursos, disciplinas, matrizes, componentes (`ADMIN`); GET turmas também `PROFESSOR` (só as suas)
+- `/matriculas` — vínculo acadêmico (`ADMIN`)
+- `/diario` — enturmação `ADMIN`; GET lista/id `ADMIN`+`PROFESSOR` (professor filtrado pelo JWT); `PATCH /diario/avaliar` `ADMIN`+`PROFESSOR` titular
+- `/financeiro/faturas` — contas a receber (`ADMIN`)
+- `/comunicados` e `/ouvidoria/reclamacoes` — mural e ouvidoria (`ADMIN`)
+- `/dashboard/admin` (`ADMIN`) e `/dashboard/professor` (`PROFESSOR`) — resumos do período (`anoLetivo` / `semestreLetivo` opcionais)
+- `GET /health` — `{ status: "ok" }`, público, fora de `/api/v1`
 
 ### Plugins Fastify (não middlewares)
 
@@ -93,11 +98,15 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 - Registrar `@fastify/jwt` em `src/index.ts` antes de `authPlugin`.
 - `src/plugins/authenticate.ts` usa `fastify-plugin` (`fp`) para publicar decorators na instância pai:
-  - `app.authenticate`: decorator aplicado em `onRequest` da rota; chama `request.jwtVerify()`.
-  - `app.authorize(roles)`: decorator aplicado em `preHandler`; confere `request.user.role` contra o enum `Role`.
-- Rotas protegidas declaram esses hooks na própria rota. Login permanece público.
-- Exemplo: `onRequest: [app.authenticate]` e, quando a rota exige perfil, `preHandler: [app.authorize([Role.ADMIN])]`.
-- `onRequest` roda antes de `preHandler`, então a autorização só executa depois do JWT válido.
+  - `app.authenticate`: `onRequest`; `request.jwtVerify()` e em seguida recusa conta `ativo === false` (401).
+  - `app.authorize(roles)`: `preHandler`; confere `request.user.role` contra o enum `Role`.
+- Rotas protegidas declaram esses hooks na própria rota. Login e `/health` permanecem públicos.
+- Exemplo: `onRequest: [app.authenticate]` e, quando a rota exige perfil, `preHandler: [app.authorize([Role.ADMIN, Role.PROFESSOR])]`.
+- `onRequest` roda antes de `preHandler`, então a autorização só executa depois do JWT válido e da conta ativa.
+- `GET /auth/me` devolve `ativo`, `aluno.{id, ra}` e `professor.{id, matricula, titulacao}` (nullable). Não omitir esses campos.
+- `PATCH /auth/senha` (senha atual + nova) é o fluxo de primeiro acesso prometido no e-mail de matrícula.
+- Leituras por papel: **não duplicar CRUD**. Reutilizar o GET ADMIN e filtrar no service pelo JWT (`professor.userId = request.user.sub`); POST/PATCH/DELETE acadêmicos continuam `ADMIN`. Professor titular já é validado em `PATCH /diario/avaliar`.
+- Erros HTTP: `setErrorHandler` em `src/index.ts` responde `{ error, message? }`. Erros de domínio nos services usam a mesma forma. Não devolver o payload padrão do Fastify/Zod cru.
 
 ### Código Compartilhado
 
@@ -170,6 +179,13 @@ Definir `onDelete` explicitamente no Prisma. Antes de `delete`, o service conta 
 - **SetNull**: `Aluno.responsavelId` ao apagar o responsável.
 - Não apagar o próprio usuário autenticado. Apagar matrícula não apaga o aluno.
 
+### E. Dashboards internos
+
+- `GET /dashboard/admin`: matrículas por status, turmas do período, ocupação média, faturas `PENDENTE`, reclamações `ABERTO`.
+- `GET /dashboard/professor`: turmas do período com `quantidadeDiarios`/`capacidade` e contagem de diários sem A1 ou A2.
+- Período padrão: ano corrente e semestre `1` de janeiro a junho, `2` no restante do ano. Aceitar query `anoLetivo` e `semestreLetivo`.
+- Seed de demo (`prisma/seed.ts`): admin, professor `professor@opensga.dev`, aluno, disciplina/componente, turma do período atual, diário, fatura e comunicado. Rodar `npx prisma db seed --config prisma7.config.ts`.
+
 ---
 
 ## 7. Instrução de Prompt para Modelos de IA
@@ -181,6 +197,7 @@ Ao implementar código neste projeto:
 3. Valide todas as entradas de rotas Fastify com schemas Zod tipados via `withTypeProvider<ZodTypeProvider>()`.
 4. Respeite todas as regras de sintaxe Zod 4 e convenções TypeScript listadas neste documento.
 5. Autenticação e RBAC ficam no plugin `src/plugins/authenticate.ts`. Proteja rotas com `onRequest` / `preHandler`. Não crie middlewares Express.
+6. Para o professor, abra só GET (e o avaliar já existente). Filtre pelo JWT; 403 se acessar turma/diário de outro docente.
 
 ## 8. Git
 
