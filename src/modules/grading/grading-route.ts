@@ -29,10 +29,10 @@ export const gradingRoutes = async (app: FastifyInstance): Promise<void> => {
     "/diario",
     {
       onRequest: [app.authenticate],
-      preHandler: [app.authorize([Role.ADMIN])],
+      preHandler: [app.authorize([Role.ADMIN, Role.PROFESSOR])],
       schema: {
         tags: ["Acadêmico - Diário"],
-        summary: "Listar diários por turma e/ou matrícula",
+        summary: "Listar diários por turma e/ou matrícula; professor vê apenas as suas turmas",
         security: [{bearerAuth: []}],
         querystring: listDiariosQuerySchema,
         response: {
@@ -49,10 +49,10 @@ export const gradingRoutes = async (app: FastifyInstance): Promise<void> => {
     "/diario/:id",
     {
       onRequest: [app.authenticate],
-      preHandler: [app.authorize([Role.ADMIN])],
+      preHandler: [app.authorize([Role.ADMIN, Role.PROFESSOR])],
       schema: {
         tags: ["Acadêmico - Diário"],
-        summary: "Buscar diário de classe por id",
+        summary: "Buscar diário de classe por id; professor somente das próprias turmas",
         security: [{bearerAuth: []}],
         params: idParamsSchema,
         response: {

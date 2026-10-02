@@ -104,7 +104,7 @@ const mapDiario = (diario: {
   totalFaltas: number;
   chCumprida: number;
   aprovado: boolean | null;
-  turma: IDiarioOutput["turma"];
+  turma: IDiarioOutput["turma"] & {professor?: {userId: string}};
   matricula: {aluno: {ra: string; user: {nome: string}}};
 }): IDiarioOutput => {
   return {
@@ -118,7 +118,11 @@ const mapDiario = (diario: {
     totalFaltas: diario.totalFaltas,
     chCumprida: diario.chCumprida,
     aprovado: diario.aprovado,
-    turma: diario.turma,
+    turma: {
+      id: diario.turma.id,
+      codigo: diario.turma.codigo,
+      disciplina: diario.turma.disciplina,
+    },
     aluno: {
       ra: diario.matricula.aluno.ra,
       nome: diario.matricula.aluno.user.nome,
@@ -126,16 +130,35 @@ const mapDiario = (diario: {
   };
 };
 
-export const fetchDiarios = async (query: IListDiariosQuery) => {
-  const diarios = await listDiarios(query);
+export const fetchDiarios = async ({
+  actorRole,
+  actorUserId,
+  ...query
+}: IListDiariosQuery & {actorRole: Role; actorUserId: string}) => {
+  const diarios = await listDiarios({
+    ...query,
+    professorUserId: actorRole === Role.PROFESSOR ? actorUserId : undefined,
+  });
   return diarios.map(mapDiario);
 };
 
-export const fetchDiarioById = async (id: string) => {
+export const fetchDiarioById = async ({
+  id,
+  actorRole,
+  actorUserId,
+}: {
+  id: string;
+  actorRole: Role;
+  actorUserId: string;
+}) => {
   const diario = await findDiarioRecordById(id);
 
   if (!diario) {
     throw new GradingError("Registro de diário de classe não encontrado.", 404);
+  }
+
+  if (actorRole === Role.PROFESSOR && diario.turma.professor.userId !== actorUserId) {
+    throw new GradingError("Você não é o professor responsável por esta turma.", 403);
   }
 
   return mapDiario(diario);

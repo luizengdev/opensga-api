@@ -319,13 +319,21 @@ export const listTurmasHandler = async (
   request: FastifyRequest<{Querystring: IListTurmasQuery}>,
   reply: FastifyReply,
 ) => {
-  const turmas = await fetchTurmas(request.query);
+  const turmas = await fetchTurmas({
+    ...request.query,
+    actorRole: request.user.role,
+    actorUserId: request.user.sub,
+  });
   return reply.status(200).send(turmas);
 };
 
 export const getTurmaHandler = async (request: FastifyRequest<{Params: {id: string}}>, reply: FastifyReply) => {
   try {
-    const turma = await fetchTurmaById(request.params.id);
+    const turma = await fetchTurmaById({
+      id: request.params.id,
+      actorRole: request.user.role,
+      actorUserId: request.user.sub,
+    });
     return reply.status(200).send(turma);
   } catch (error) {
     return replyWithAcademicError(error, reply, "Erro ao buscar turma.");

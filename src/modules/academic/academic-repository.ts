@@ -323,12 +323,18 @@ export const insertTurma = async (data: ICreateTurmaInput) => {
   });
 };
 
-export const listTurmas = async ({campusId, anoLetivo, semestreLetivo}: IListTurmasQuery) => {
+export const listTurmas = async ({
+  campusId,
+  anoLetivo,
+  semestreLetivo,
+  professorUserId,
+}: IListTurmasQuery & {professorUserId?: string}) => {
   return prisma.turma.findMany({
     where: {
       ...(campusId ? {campusId} : {}),
       ...(anoLetivo !== undefined ? {anoLetivo} : {}),
       ...(semestreLetivo !== undefined ? {semestreLetivo} : {}),
+      ...(professorUserId ? {professor: {userId: professorUserId}} : {}),
     },
     select: {
       ...turmaPublicSelect,

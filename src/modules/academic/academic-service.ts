@@ -1,3 +1,4 @@
+import {Role} from "../../generated/prisma/enums.js";
 import {
   countMatriculasByCampus,
   countMatriculasByCurso,
@@ -56,9 +57,9 @@ import type {
 } from "./academic-schemas.js";
 
 export class AcademicError extends Error {
-  readonly statusCode: 400 | 404 | 409;
+  readonly statusCode: 400 | 403 | 404 | 409;
 
-  constructor(message: string, statusCode: 400 | 404 | 409) {
+  constructor(message: string, statusCode: 400 | 403 | 404 | 409) {
     super(message);
     this.name = "AcademicError";
     this.statusCode = statusCode;
@@ -462,8 +463,15 @@ export const createNewTurma = async (input: ICreateTurmaInput) => {
   return insertTurma(input);
 };
 
-export const fetchTurmas = async (params: IListTurmasQuery) => {
-  const turmas = await listTurmas(params);
+export const fetchTurmas = async ({
+  actorRole,
+  actorUserId,
+  ...params
+}: IListTurmasQuery & {actorRole: Role; actorUserId: string}) => {
+  const turmas = await listTurmas({
+    ...params,
+    professorUserId: actorRole === Role.PROFESSOR ? actorUserId : undefined,
+  });
 
   return turmas.map(({_count, ...turma}) => ({
     ...turma,
@@ -471,11 +479,23 @@ export const fetchTurmas = async (params: IListTurmasQuery) => {
   }));
 };
 
-export const fetchTurmaById = async (id: string) => {
+export const fetchTurmaById = async ({
+  id,
+  actorRole,
+  actorUserId,
+}: {
+  id: string;
+  actorRole: Role;
+  actorUserId: string;
+}) => {
   const turma = await findTurmaById(id);
 
   if (!turma) {
     throw new AcademicError("Turma não encontrada.", 404);
+  }
+
+  if (actorRole === Role.PROFESSOR && turma.professor.user.id !== actorUserId) {
+    throw new AcademicError("Você não é o professor responsável por esta turma.", 403);
   }
 
   return turma;

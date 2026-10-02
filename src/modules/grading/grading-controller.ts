@@ -23,13 +23,21 @@ export const listDiariosHandler = async (
   request: FastifyRequest<{Querystring: IListDiariosQuery}>,
   reply: FastifyReply,
 ) => {
-  const diarios = await fetchDiarios(request.query);
+  const diarios = await fetchDiarios({
+    ...request.query,
+    actorRole: request.user.role,
+    actorUserId: request.user.sub,
+  });
   return reply.status(200).send(diarios);
 };
 
 export const getDiarioHandler = async (request: FastifyRequest<{Params: {id: string}}>, reply: FastifyReply) => {
   try {
-    const diario = await fetchDiarioById(request.params.id);
+    const diario = await fetchDiarioById({
+      id: request.params.id,
+      actorRole: request.user.role,
+      actorUserId: request.user.sub,
+    });
     return reply.status(200).send(diario);
   } catch (error) {
     return replyWithGradingError(error, reply, "Erro ao buscar diário.");

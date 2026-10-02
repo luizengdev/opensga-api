@@ -77,6 +77,10 @@ export const academicRoutes = async (app: FastifyInstance): Promise<void> => {
     onRequest: [app.authenticate],
     preHandler: [app.authorize([Role.ADMIN])],
   };
+  const acessoAdminOuProfessor = {
+    onRequest: [app.authenticate],
+    preHandler: [app.authorize([Role.ADMIN, Role.PROFESSOR])],
+  };
 
   typedApp.get(
     "/academic/campi",
@@ -634,10 +638,10 @@ export const academicRoutes = async (app: FastifyInstance): Promise<void> => {
   typedApp.get(
     "/academic/turmas",
     {
-      ...acessoAdmin,
+      ...acessoAdminOuProfessor,
       schema: {
         tags: ["Acadêmico - Turmas"],
-        summary: "Listar turmas com filtros opcionais de campus e período letivo",
+        summary: "Listar turmas com filtros opcionais; professor vê apenas as suas",
         security: [{bearerAuth: []}],
         querystring: listTurmasQuerySchema,
         response: {
@@ -653,10 +657,10 @@ export const academicRoutes = async (app: FastifyInstance): Promise<void> => {
   typedApp.get(
     "/academic/turmas/:id",
     {
-      ...acessoAdmin,
+      ...acessoAdminOuProfessor,
       schema: {
         tags: ["Acadêmico - Turmas"],
-        summary: "Buscar turma por id",
+        summary: "Buscar turma por id; professor somente da própria turma",
         security: [{bearerAuth: []}],
         params: idParamsSchema,
         response: {

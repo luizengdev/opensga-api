@@ -93,11 +93,20 @@ export const findDiarioById = async (id: string) => {
   });
 };
 
-export const listDiarios = async ({turmaId, matriculaId}: {turmaId?: string; matriculaId?: string}) => {
+export const listDiarios = async ({
+  turmaId,
+  matriculaId,
+  professorUserId,
+}: {
+  turmaId?: string;
+  matriculaId?: string;
+  professorUserId?: string;
+}) => {
   return prisma.diarioClasse.findMany({
     where: {
       ...(turmaId ? {turmaId} : {}),
       ...(matriculaId ? {matriculaId} : {}),
+      ...(professorUserId ? {turma: {professor: {userId: professorUserId}}} : {}),
     },
     select: {
       id: true,
@@ -151,6 +160,7 @@ export const findDiarioRecordById = async (id: string) => {
           id: true,
           codigo: true,
           disciplina: {select: {id: true, nome: true, codigo: true}},
+          professor: {select: {userId: true}},
         },
       },
       matricula: {
