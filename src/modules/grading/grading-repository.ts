@@ -93,6 +93,95 @@ export const findDiarioById = async (id: string) => {
   });
 };
 
+export const listDiarios = async ({turmaId, matriculaId}: {turmaId?: string; matriculaId?: string}) => {
+  return prisma.diarioClasse.findMany({
+    where: {
+      ...(turmaId ? {turmaId} : {}),
+      ...(matriculaId ? {matriculaId} : {}),
+    },
+    select: {
+      id: true,
+      matriculaId: true,
+      turmaId: true,
+      notaA1: true,
+      notaA2: true,
+      notaAF: true,
+      notaFinal: true,
+      totalFaltas: true,
+      chCumprida: true,
+      aprovado: true,
+      turma: {
+        select: {
+          id: true,
+          codigo: true,
+          disciplina: {select: {id: true, nome: true, codigo: true}},
+        },
+      },
+      matricula: {
+        select: {
+          aluno: {
+            select: {
+              ra: true,
+              user: {select: {nome: true}},
+            },
+          },
+        },
+      },
+    },
+    orderBy: {criadoEm: "desc"},
+  });
+};
+
+export const findDiarioRecordById = async (id: string) => {
+  return prisma.diarioClasse.findUnique({
+    where: {id},
+    select: {
+      id: true,
+      matriculaId: true,
+      turmaId: true,
+      notaA1: true,
+      notaA2: true,
+      notaAF: true,
+      notaFinal: true,
+      totalFaltas: true,
+      chCumprida: true,
+      aprovado: true,
+      turma: {
+        select: {
+          id: true,
+          codigo: true,
+          disciplina: {select: {id: true, nome: true, codigo: true}},
+        },
+      },
+      matricula: {
+        select: {
+          aluno: {
+            select: {
+              ra: true,
+              user: {select: {nome: true}},
+            },
+          },
+        },
+      },
+    },
+  });
+};
+
+export const deleteDiarioById = async (id: string) => {
+  try {
+    return await prisma.diarioClasse.delete({
+      where: {id},
+      select: {id: true},
+    });
+  } catch (error) {
+    if (isKnownRequestError(error) && error.code === "P2025") {
+      return null;
+    }
+
+    throw error;
+  }
+};
+
 export const saveDiarioGrades = async ({
   id,
   notaA1,

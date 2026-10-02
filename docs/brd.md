@@ -8,7 +8,8 @@
 
 | Versão | Data de Elaboração | Responsável | Perfil | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **1.0.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Homologado |
+| **1.1.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Homologado |
+| **1.0.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Substituído |
 
 ---
 
@@ -48,7 +49,7 @@ Instituições de ensino superior frequentemente enfrentam gargalos críticos de
 ```
 
 - **Administrador (`ADMIN`) — Secretaria Acadêmica, Coordenação e Diretoria**  
-  Responsável pela parametrização da infraestrutura multicampus, desenho de cursos, versionamento de matrizes curriculares, cadastramento de componentes, auditoria de indicadores MEC, abertura de turmas e efetivação de matrículas.
+  Responsável pela parametrização da infraestrutura multicampus, cadastro de usuários e professores, desenho de cursos, versionamento de matrizes curriculares, cadastramento de componentes, auditoria de indicadores MEC, abertura de turmas, efetivação de matrículas, emissão de faturas, comunicados institucionais e condução da ouvidoria.
 
 - **Professor (`PROFESSOR`) — Corpo Docente**  
   Responsável pela gestão do diário de classe das turmas sob sua regência, registro de assiduidade (faltas) e lançamento das avaliações semestrais (A1, A2 e Avaliação Final — AF).
@@ -132,9 +133,28 @@ O sistema é subdividido em domínios de negócio delimitados, operando sob regr
 
 - **Contas a Receber (Faturamento)**: Emissão e controle de faturas acadêmicas vinculadas ao aluno, com rastreamento de vencimento, status financeiro (pendente, paga, atrasada, cancelada) e links diretos para pagamento.
 - **Mural Institucional de Comunicados**: Publicação de notificações institucionais direcionadas por público-alvo (administradores, professores, alunos e responsáveis).
-- **Ouvidoria Universitária e SLA**: Central de atendimento e manifestações com triagem por setor (Financeiro, Acadêmico, Secretaria, Infraestrutura e Ouvidoria Geral), acompanhada por histórico de status da demanda e registro formal de respostas.
+- **Ouvidoria Universitária e SLA**: Central de atendimento e manifestações com triagem por setor (Financeiro, Acadêmico, Secretaria, Infraestrutura e Ouvidoria Geral), acompanhada por histórico de status da demanda e registro formal de respostas (aberta, em análise, respondida e fechada).
 
-> **Nota de implementação**: Os domínios financeiro (Stripe), comunicados e ouvidoria estão modelados no banco de dados e previstos na arquitetura; as rotas HTTP correspondentes ainda não estão expostas na API na versão analisada.
+### 2.7 Superfície administrativa da API (ADMIN)
+
+O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs` (Scalar / OpenAPI). As exclusões respeitam integridade acadêmica: o sistema recusa com conflito (HTTP 409) quando a entidade ainda possui vínculos que não podem ser apagados em cascata.
+
+| Domínio | Capacidade ADMIN exposta |
+| :--- | :--- |
+| Identidade | Login unificado e perfil (`/auth`). CRUD de usuários, professores e administradores; consulta de alunos e responsáveis (`/users`). |
+| Currículo | CRUD de campus, curso, disciplina, matriz, componente e turma (`/academic`). Auditoria MEC da matriz. |
+| Matrícula | Efetivação, consulta por status, alteração de status e exclusão do vínculo (`/matriculas`). O aluno não é apagado junto com a matrícula. |
+| Diário | Enturmação, listagem, consulta, desenturmação e lançamento de notas/faltas (`/diario`). |
+| Financeiro | Emissão, consulta, atualização de status e exclusão de faturas (`/financeiro/faturas`). Conciliação automática via webhook Stripe ainda não está exposta. |
+| Comunicação | CRUD de comunicados por público-alvo (`/comunicados`) e fluxo de ouvidoria: abrir, responder, fechar e excluir (`/ouvidoria/reclamacoes`). |
+
+**Regras de exclusão (integridade referencial)**
+
+- Apagar **campus**, **curso** ou **matriz** é bloqueado enquanto existir matrícula vinculada.
+- Apagar **disciplina** ou **professor** é bloqueado enquanto existir turma ofertada.
+- Apagar **turma** ou **matrícula** remove os diários correspondentes.
+- Apagar **usuário** remove o perfil (professor, aluno ou responsável) e as reclamações abertas; alunos perdem o vínculo de responsável (ficam sem responsável), sem exclusão do discente.
+- Apagar **responsável** não exclui o aluno: o campo de responsável é apenas desvinculado.
 
 ---
 

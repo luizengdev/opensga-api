@@ -181,25 +181,49 @@ const createAlunoWithUniqueRa = async (
   throw new Error("Não foi possível gerar um RA único.");
 };
 
-export const listEnrollments = async () => {
-  return prisma.matricula.findMany({
-    where: {status: StatusMatricula.ATIVO},
+const enrollmentSelect = {
+  id: true,
+  status: true,
+  periodoAtual: true,
+  semestreIngresso: true,
+  curso: {select: {id: true, nome: true, modalidade: true}},
+  matrizCurricular: {select: {id: true, nome: true, anoVigencia: true}},
+  aluno: {
     select: {
-      id: true,
-      status: true,
-      periodoAtual: true,
-      semestreIngresso: true,
-      curso: {select: {id: true, nome: true, modalidade: true}},
-      matrizCurricular: {select: {id: true, nome: true, anoVigencia: true}},
-      aluno: {
-        select: {
-          ra: true,
-          user: {select: {id: true, nome: true, email: true, cpf: true, ativo: true}},
-        },
-      },
+      ra: true,
+      user: {select: {id: true, nome: true, email: true, cpf: true, ativo: true}},
     },
+  },
+} as const;
+
+export const listEnrollments = async (status?: StatusMatricula) => {
+  return prisma.matricula.findMany({
+    where: status ? {status} : undefined,
+    select: enrollmentSelect,
     orderBy: {criadoEm: "desc"},
   });
+};
+
+export const findEnrollmentById = async (id: string) => {
+  return prisma.matricula.findUnique({
+    where: {id},
+    select: enrollmentSelect,
+  });
+};
+
+export const deleteEnrollmentById = async (id: string) => {
+  try {
+    return await prisma.matricula.delete({
+      where: {id},
+      select: {id: true},
+    });
+  } catch (error) {
+    if (isKnownRequestError(error) && error.code === "P2025") {
+      return null;
+    }
+
+    throw error;
+  }
 };
 
 export const updateEnrollmentStatus = async ({

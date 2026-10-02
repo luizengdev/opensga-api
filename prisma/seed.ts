@@ -19,6 +19,53 @@ async function main() {
   });
 
   console.log(`✅ Usuário Admin pronto: ${admin.email} (Senha: Admin@123456)`);
+
+  const campus = await prisma.campus.upsert({
+    where: {codigoPolo: "SEDE-REC"},
+    update: {},
+    create: {
+      nome: "Sede Recife",
+      codigoPolo: "SEDE-REC",
+      cidade: "Recife",
+      estado: "PE",
+      endereco: "Av. Conde da Boa Vista, 1000",
+    },
+  });
+
+  const cursoExistente = await prisma.curso.findFirst({
+    where: {nome: "Engenharia de Software", campusId: campus.id},
+  });
+
+  const curso =
+    cursoExistente ??
+    (await prisma.curso.create({
+      data: {
+        campusId: campus.id,
+        nome: "Engenharia de Software",
+        codigoMec: "ESW-001",
+        modalidade: "PRESENCIAL",
+        duracaoSemestres: 8,
+      },
+    }));
+
+  const matrizExistente = await prisma.matrizCurricular.findFirst({
+    where: {cursoId: curso.id, nome: "Matriz 2026.1"},
+  });
+
+  const matriz =
+    matrizExistente ??
+    (await prisma.matrizCurricular.create({
+      data: {
+        cursoId: curso.id,
+        nome: "Matriz 2026.1",
+        anoVigencia: 2026,
+        ativo: true,
+      },
+    }));
+
+  console.log(`✅ Campus: ${campus.nome} (${campus.id})`);
+  console.log(`✅ Curso: ${curso.nome} (${curso.id})`);
+  console.log(`✅ Matriz: ${matriz.nome} (${matriz.id})`);
 }
 
 main()

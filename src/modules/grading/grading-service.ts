@@ -2,12 +2,21 @@ import {Prisma} from "../../generated/prisma/client.js";
 import {Role, StatusMatricula} from "../../generated/prisma/enums.js";
 import {
   createDiarioEntry,
+  deleteDiarioById,
   findDiarioById,
+  findDiarioRecordById,
   findMatriculaForPlacement,
   findTurmaForPlacement,
+  listDiarios,
   saveDiarioGrades,
 } from "./grading-repository.js";
-import type {IAvaliacaoOutput, IEnrollInTurmaInput, IUpdateGradesInput} from "./grading-schemas.js";
+import type {
+  IAvaliacaoOutput,
+  IDiarioOutput,
+  IEnrollInTurmaInput,
+  IListDiariosQuery,
+  IUpdateGradesInput,
+} from "./grading-schemas.js";
 
 export class GradingError extends Error {
   readonly statusCode: 400 | 403 | 404;
@@ -82,6 +91,64 @@ export const enrollStudentInClass = async (input: IEnrollInTurmaInput) => {
       nome: matricula.aluno.user.nome,
     },
   };
+};
+
+const mapDiario = (diario: {
+  id: string;
+  matriculaId: string;
+  turmaId: string;
+  notaA1: Prisma.Decimal | null;
+  notaA2: Prisma.Decimal | null;
+  notaAF: Prisma.Decimal | null;
+  notaFinal: Prisma.Decimal | null;
+  totalFaltas: number;
+  chCumprida: number;
+  aprovado: boolean | null;
+  turma: IDiarioOutput["turma"];
+  matricula: {aluno: {ra: string; user: {nome: string}}};
+}): IDiarioOutput => {
+  return {
+    id: diario.id,
+    matriculaId: diario.matriculaId,
+    turmaId: diario.turmaId,
+    notaA1: decimalToNumber(diario.notaA1),
+    notaA2: decimalToNumber(diario.notaA2),
+    notaAF: decimalToNumber(diario.notaAF),
+    notaFinal: decimalToNumber(diario.notaFinal),
+    totalFaltas: diario.totalFaltas,
+    chCumprida: diario.chCumprida,
+    aprovado: diario.aprovado,
+    turma: diario.turma,
+    aluno: {
+      ra: diario.matricula.aluno.ra,
+      nome: diario.matricula.aluno.user.nome,
+    },
+  };
+};
+
+export const fetchDiarios = async (query: IListDiariosQuery) => {
+  const diarios = await listDiarios(query);
+  return diarios.map(mapDiario);
+};
+
+export const fetchDiarioById = async (id: string) => {
+  const diario = await findDiarioRecordById(id);
+
+  if (!diario) {
+    throw new GradingError("Registro de diário de classe não encontrado.", 404);
+  }
+
+  return mapDiario(diario);
+};
+
+export const unenrollStudentFromClass = async (id: string) => {
+  const deleted = await deleteDiarioById(id);
+
+  if (!deleted) {
+    throw new GradingError("Registro de diário de classe não encontrado.", 404);
+  }
+
+  return deleted;
 };
 
 export const calculateAndSaveGrades = async ({

@@ -46,6 +46,49 @@ export const avaliacaoResponseSchema = z.object({
   aprovado: z.boolean().nullable(),
 });
 
+export const idParamsSchema = z.object({
+  id: z.uuid(),
+});
+
+export const listDiariosQuerySchema = z.object({
+  turmaId: z.uuid().optional(),
+  matriculaId: z.uuid().optional(),
+});
+
+export const deleteResponseSchema = z.object({
+  id: z.uuid(),
+});
+
+export const diarioResponseSchema = z.object({
+  id: z.uuid(),
+  matriculaId: z.uuid(),
+  turmaId: z.uuid(),
+  notaA1: notaSchema,
+  notaA2: notaSchema,
+  notaAF: notaSchema,
+  notaFinal: notaSchema,
+  totalFaltas: z.number().int(),
+  chCumprida: z.number().int(),
+  aprovado: z.boolean().nullable(),
+  turma: z.object({
+    id: z.uuid(),
+    codigo: z.string(),
+    disciplina: z.object({
+      id: z.uuid(),
+      nome: z.string(),
+      codigo: z.string(),
+    }),
+  }),
+  aluno: z.object({
+    ra: z.string(),
+    nome: z.string(),
+  }),
+});
+
+export const diarioListResponseSchema = z.array(diarioResponseSchema);
+
 export type IEnrollInTurmaInput = z.infer<typeof enrollInTurmaSchema>;
 export type IUpdateGradesInput = z.infer<typeof updateGradesSchema>;
 export type IAvaliacaoOutput = z.infer<typeof avaliacaoResponseSchema>;
+export type IListDiariosQuery = z.infer<typeof listDiariosQuerySchema>;
+export type IDiarioOutput = z.infer<typeof diarioResponseSchema>;

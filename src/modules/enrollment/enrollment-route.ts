@@ -4,16 +4,21 @@ import {ZodTypeProvider} from "fastify-type-provider-zod";
 import {Role} from "../../generated/prisma/enums.js";
 import {
   createEnrollmentHandler,
+  deleteEnrollmentHandler,
+  getEnrollmentHandler,
   listEnrollmentsHandler,
   updateEnrollmentStatusHandler,
 } from "./enrollment-controller.js";
 import {
   createEnrollmentResponseSchema,
   createEnrollmentSchema,
+  deleteResponseSchema,
   enrollmentIdParamsSchema,
+  enrollmentItemSchema,
   enrollmentListResponseSchema,
   enrollmentStatusResponseSchema,
   errorResponseSchema,
+  listEnrollmentsQuerySchema,
   updateEnrollmentStatusSchema,
 } from "./enrollment-schemas.js";
 
@@ -51,8 +56,9 @@ export const enrollmentRoutes = async (app: FastifyInstance): Promise<void> => {
       ...acessoAdmin,
       schema: {
         tags: ["Matrículas"],
-        summary: "Listar todas as matrículas ativas da instituição",
+        summary: "Listar matrículas, com filtro opcional de status",
         security: [{bearerAuth: []}],
+        querystring: listEnrollmentsQuerySchema,
         response: {
           200: enrollmentListResponseSchema,
           401: errorResponseSchema,
@@ -61,6 +67,46 @@ export const enrollmentRoutes = async (app: FastifyInstance): Promise<void> => {
       },
     },
     listEnrollmentsHandler,
+  );
+
+  typedApp.get(
+    "/matriculas/:id",
+    {
+      ...acessoAdmin,
+      schema: {
+        tags: ["Matrículas"],
+        summary: "Buscar matrícula por id",
+        security: [{bearerAuth: []}],
+        params: enrollmentIdParamsSchema,
+        response: {
+          200: enrollmentItemSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    getEnrollmentHandler,
+  );
+
+  typedApp.delete(
+    "/matriculas/:id",
+    {
+      ...acessoAdmin,
+      schema: {
+        tags: ["Matrículas"],
+        summary: "Excluir matrícula e diários vinculados",
+        security: [{bearerAuth: []}],
+        params: enrollmentIdParamsSchema,
+        response: {
+          200: deleteResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    deleteEnrollmentHandler,
   );
 
   typedApp.patch(

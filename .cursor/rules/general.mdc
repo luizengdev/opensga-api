@@ -43,7 +43,7 @@ Cada módulo em `src/modules/<modulo>/` deve conter estritamente:
 - `<modulo>-schemas.ts` -> Schemas de validação Zod e interfaces tipadas via `z.infer`.
 - `<modulo>-entity.ts` -> Interfaces e tipos de entidades de domínio (quando aplicável).
 
-Estrutura alvo do repositório (o código ainda está em construção; siga este layout ao criar arquivos):
+Estrutura do repositório (registre novos plugins em `src/index.ts` com `{prefix: "/api/v1"}`):
 
 ```text
 opensga-api/
@@ -66,25 +66,26 @@ opensga-api/
     │   └── authenticate.ts         # Decorators authenticate (JWT) e authorize (RBAC)
     ├── modules/                    # Módulos da arquitetura hexagonal
     │   ├── auth/                   # Login unificado, JWT e perfil do usuário logado
-    │   │   ├── auth-route.ts
-    │   │   ├── auth-controller.ts
-    │   │   ├── auth-service.ts
-    │   │   ├── auth-repository.ts
-    │   │   └── auth-schemas.ts
-    │   ├── academic/               # Cursos, Matrizes, Componentes, Turmas
-    │   │   ├── academic-route.ts
-    │   │   ├── academic-controller.ts
-    │   │   ├── academic-service.ts
-    │   │   ├── academic-repository.ts
-    │   │   └── academic-schemas.ts
-    │   ├── enrollment/             # Matrícula, RA e Alocação
+    │   ├── users/                  # Professores, Alunos, Responsáveis e Admins
+    │   ├── academic/               # Campus, Cursos, Disciplinas, Matrizes, Componentes, Turmas
+    │   ├── enrollment/             # Matrícula, RA e ciclo de status
     │   ├── grading/                # Diário de Classe, Notas (A1, A2, AF) e Faltas
-    │   ├── financial/              # Faturas e Webhooks Stripe
-    │   └── users/                  # Professores, Alunos, Responsáveis e Admins
+    │   ├── financial/              # Faturas acadêmicas (webhooks Stripe ainda não)
+    │   └── communications/         # Comunicados institucionais e ouvidoria
     └── index.ts                    # Bootstrap da aplicação Fastify
 ```
 
-Os módulos `auth`, `enrollment`, `grading`, `financial` e `users` seguem o mesmo conjunto de arquivos do módulo `academic`.
+Todos os módulos seguem o mesmo conjunto de arquivos (`-route`, `-controller`, `-service`, `-repository`, `-schemas`).
+
+Prefixos HTTP atuais (ADMIN, salvo login e lançamento de diário pelo professor):
+
+- `/auth` — login e `GET /me`
+- `/users` — usuários, professores, alunos e responsáveis
+- `/academic` — campi, cursos, disciplinas, matrizes, componentes e turmas
+- `/matriculas` — vínculo acadêmico
+- `/diario` — enturmação, consulta e avaliação
+- `/financeiro/faturas` — contas a receber
+- `/comunicados` e `/ouvidoria/reclamacoes` — mural e ouvidoria
 
 ### Plugins Fastify (não middlewares)
 
@@ -107,7 +108,7 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 ## 4. Regras Estritas de TypeScript e Código
 
-1. **TypeScript Puro**: Proibido criar arquivos `.js` no código fonte; **nunca**** utilizar `any` (usar `unknown` ou tipagem genérica).
+1. **TypeScript Puro**: Proibido criar arquivos `.js` no código fonte; **nunca** utilizar `any` (usar `unknown` ou tipagem genérica).
 2. **Importações ES Modules**: No backend, todas as importações relativas devem explicitar a extensão `.js` (ex: `import { db } from "../../lib/db.js";`).
 3. **Exports**: Priorizar **Named Exports** em todos os arquivos (`export const ...`).
 4. **Interfaces vs Types**: Utilizar `interface` para objetos e DTOs; reservar `type` exclusivamente para uniões, tuplas ou mapped types.
@@ -159,6 +160,15 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 - **Aprovação Direta**: $\text{Média Semestral} \ge 6.0$ e $\text{Faltas} \le 25\%$ da `chTotal`.
 - **Avaliação Final (AF)**: Se $\text{Média Semestral} < 6.0$, aplica-se AF. Média Final $= (\text{Média Semestral} + AF) / 2$. Aprovado se $\ge 5.0$.
 - **Integralização**: A `chCumprida` da disciplina só é creditada no histórico do aluno se `aprovado = true`.
+
+### D. Integridade referencial e exclusão ADMIN
+
+Definir `onDelete` explicitamente no Prisma. Antes de `delete`, o service conta filhos Restrict e lança erro de domínio **409** — não deixar o Prisma devolver P2003 cru.
+
+- **Cascade**: `User` → perfil (Professor / Aluno / Responsável) e `Reclamacao`; `Campus` → `Curso` → `Matriz` → `Componente`; `Campus` → `Turma`; `Aluno` → `Matricula` / `Fatura`; `Turma` ou `Matricula` → `DiarioClasse`.
+- **Restrict** (409 se houver filho): `Turma.disciplina`, `Turma.professor`, `Matricula.curso`, `Matricula.matrizCurricular`.
+- **SetNull**: `Aluno.responsavelId` ao apagar o responsável.
+- Não apagar o próprio usuário autenticado. Apagar matrícula não apaga o aluno.
 
 ---
 

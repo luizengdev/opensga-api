@@ -6,12 +6,14 @@ import {Role} from "../../generated/prisma/enums.js";
 import {sendCredentialsEmail} from "../../lib/mailer.js";
 import {
   createStudentWithEnrollment,
+  deleteEnrollmentById,
   findActiveMatrizById,
+  findEnrollmentById,
   findUserByCpfOrEmail,
   listEnrollments,
   updateEnrollmentStatus,
 } from "./enrollment-repository.js";
-import type {ICreateEnrollmentInput, IUpdateEnrollmentStatusInput} from "./enrollment-schemas.js";
+import type {ICreateEnrollmentInput, IListEnrollmentsQuery, IUpdateEnrollmentStatusInput} from "./enrollment-schemas.js";
 
 export class EnrollmentError extends Error {
   readonly statusCode: 400 | 404;
@@ -139,8 +141,28 @@ const resolveGuardian = async (input: ICreateEnrollmentInput) => {
   };
 };
 
-export const fetchAllEnrollments = async () => {
-  return listEnrollments();
+export const fetchAllEnrollments = async (query: IListEnrollmentsQuery = {}) => {
+  return listEnrollments(query.status);
+};
+
+export const fetchEnrollmentById = async (id: string) => {
+  const matricula = await findEnrollmentById(id);
+
+  if (!matricula) {
+    throw new EnrollmentError("Matrícula não encontrada.", 404);
+  }
+
+  return matricula;
+};
+
+export const removeEnrollment = async (id: string) => {
+  const deleted = await deleteEnrollmentById(id);
+
+  if (!deleted) {
+    throw new EnrollmentError("Matrícula não encontrada.", 404);
+  }
+
+  return deleted;
 };
 
 export const changeEnrollmentStatus = async ({
