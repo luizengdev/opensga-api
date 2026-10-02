@@ -2,6 +2,7 @@ import {FastifyInstance, FastifyPluginAsync, FastifyReply, FastifyRequest} from 
 import fp from "fastify-plugin";
 
 import {Role} from "../generated/prisma/client.js";
+import {findUserActiveStatus} from "../modules/auth/auth-repository.js";
 
 declare module "fastify" {
   interface FastifyInstance {
@@ -34,6 +35,15 @@ const authPluginAsync: FastifyPluginAsync = async (app: FastifyInstance): Promis
       return reply.status(401).send({
         error: "Não autorizado",
         message: "Token de autenticação ausente, inválido ou expirado.",
+      });
+    }
+
+    const account = await findUserActiveStatus({id: request.user.sub});
+
+    if (!account || !account.ativo) {
+      return reply.status(401).send({
+        error: "Não autorizado",
+        message: "Conta inativa ou bloqueada. Contate o suporte acadêmico.",
       });
     }
   });

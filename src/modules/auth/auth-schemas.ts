@@ -19,6 +19,11 @@ export const loginResponseSchema = z.object({
   }),
 });
 
+export const changePasswordSchema = z.object({
+  senhaAtual: z.string().min(6),
+  senhaNova: z.string().min(8).max(72),
+});
+
 export const meResponseSchema = z.object({
   id: z.uuid(),
   nome: z.string(),
@@ -26,13 +31,16 @@ export const meResponseSchema = z.object({
   cpf: z.string(),
   role: z.enum(Role),
   avatarUrl: z.string().nullable(),
+  ativo: z.boolean(),
   aluno: z
     .object({
+      id: z.uuid(),
       ra: z.string(),
     })
     .nullable(),
   professor: z
     .object({
+      id: z.uuid(),
       matricula: z.string(),
       titulacao: z.string(),
     })
@@ -50,5 +58,6 @@ export const messageResponseSchema = z.object({
 
 export type ILoginInput = z.infer<typeof loginSchema>;
 export type ILoginResponse = z.infer<typeof loginResponseSchema>;
+export type IChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type IMeResponse = z.infer<typeof meResponseSchema>;
 export type IErrorResponse = z.infer<typeof errorResponseSchema>;

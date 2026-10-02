@@ -127,7 +127,7 @@ model Aluno {
   dataNascimento DateTime @db.Timestamptz()
 
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  responsavel Responsavel? @relation("ResponsavelAlunos", fields: [responsavelId], references: [id])
+  responsavel Responsavel? @relation("ResponsavelAlunos", fields: [responsavelId], references: [id], onDelete: SetNull)
   matriculas  Matricula[]
   faturas     Fatura[]
 
@@ -230,9 +230,9 @@ model Turma {
   tipoEntrega    TipoEntrega @default(PRESENCIAL_FISICO)
   criadoEm       DateTime    @default(now()) @db.Timestamptz()
 
-  campus     Campus         @relation(fields: [campusId], references: [id])
-  disciplina Disciplina     @relation(fields: [disciplinaId], references: [id])
-  professor  Professor      @relation(fields: [professorId], references: [id])
+  campus     Campus         @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  disciplina Disciplina     @relation(fields: [disciplinaId], references: [id], onDelete: Restrict)
+  professor  Professor      @relation(fields: [professorId], references: [id], onDelete: Restrict)
   diarios    DiarioClasse[]
 
   @@map("turmas")
@@ -250,8 +250,8 @@ model Matricula {
   atualizadoEm       DateTime        @updatedAt @db.Timestamptz()
 
   aluno            Aluno            @relation(fields: [alunoId], references: [id], onDelete: Cascade)
-  curso            Curso            @relation(fields: [cursoId], references: [id])
-  matrizCurricular MatrizCurricular @relation(fields: [matrizCurricularId], references: [id])
+  curso            Curso            @relation(fields: [cursoId], references: [id], onDelete: Restrict)
+  matrizCurricular MatrizCurricular @relation(fields: [matrizCurricularId], references: [id], onDelete: Restrict)
   diarios          DiarioClasse[]
 
   @@map("matriculas")
@@ -318,7 +318,7 @@ model Reclamacao {
   criadoEm     DateTime         @default(now()) @db.Timestamptz()
   atualizadoEm DateTime         @updatedAt @db.Timestamptz()
 
-  usuario User @relation("ReclamacoesAbertas", fields: [usuarioId], references: [id])
+  usuario User @relation("ReclamacoesAbertas", fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@map("reclamacoes")
 }

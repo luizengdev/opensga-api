@@ -41,6 +41,14 @@ export const enrollmentIdParamsSchema = z.object({
   id: z.uuid(),
 });
 
+export const listEnrollmentsQuerySchema = z.object({
+  status: z.enum(StatusMatricula).optional(),
+});
+
+export const deleteResponseSchema = z.object({
+  id: z.uuid(),
+});
+
 export const errorResponseSchema = z.object({
   error: z.string(),
   message: z.string().optional(),
@@ -58,7 +66,7 @@ export const enrollmentStatusResponseSchema = z.object({
   status: z.enum(StatusMatricula),
 });
 
-const enrollmentItemSchema = z.object({
+export const enrollmentItemSchema = z.object({
   id: z.uuid(),
   status: z.enum(StatusMatricula),
   periodoAtual: z.number().int(),
@@ -89,3 +97,4 @@ export const enrollmentListResponseSchema = z.array(enrollmentItemSchema);
 
 export type ICreateEnrollmentInput = z.infer<typeof createEnrollmentSchema>;
 export type IUpdateEnrollmentStatusInput = z.infer<typeof updateEnrollmentStatusSchema>;
+export type IListEnrollmentsQuery = z.infer<typeof listEnrollmentsQuerySchema>;

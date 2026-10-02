@@ -1,7 +1,14 @@
 import {FastifyReply, FastifyRequest} from "fastify";
 
-import type {IEnrollInTurmaInput, IUpdateGradesInput} from "./grading-schemas.js";
-import {calculateAndSaveGrades, enrollStudentInClass, GradingError} from "./grading-service.js";
+import type {IEnrollInTurmaInput, IListDiariosQuery, IUpdateGradesInput} from "./grading-schemas.js";
+import {
+  calculateAndSaveGrades,
+  enrollStudentInClass,
+  fetchDiarioById,
+  fetchDiarios,
+  GradingError,
+  unenrollStudentFromClass,
+} from "./grading-service.js";
 
 const replyWithGradingError = (error: unknown, reply: FastifyReply, fallback: string) => {
   if (error instanceof GradingError) {
@@ -10,6 +17,40 @@ const replyWithGradingError = (error: unknown, reply: FastifyReply, fallback: st
 
   const message = error instanceof Error ? error.message : fallback;
   return reply.status(400).send({error: message});
+};
+
+export const listDiariosHandler = async (
+  request: FastifyRequest<{Querystring: IListDiariosQuery}>,
+  reply: FastifyReply,
+) => {
+  const diarios = await fetchDiarios({
+    ...request.query,
+    actorRole: request.user.role,
+    actorUserId: request.user.sub,
+  });
+  return reply.status(200).send(diarios);
+};
+
+export const getDiarioHandler = async (request: FastifyRequest<{Params: {id: string}}>, reply: FastifyReply) => {
+  try {
+    const diario = await fetchDiarioById({
+      id: request.params.id,
+      actorRole: request.user.role,
+      actorUserId: request.user.sub,
+    });
+    return reply.status(200).send(diario);
+  } catch (error) {
+    return replyWithGradingError(error, reply, "Erro ao buscar diário.");
+  }
+};
+
+export const deleteDiarioHandler = async (request: FastifyRequest<{Params: {id: string}}>, reply: FastifyReply) => {
+  try {
+    const diario = await unenrollStudentFromClass(request.params.id);
+    return reply.status(200).send(diario);
+  } catch (error) {
+    return replyWithGradingError(error, reply, "Erro ao desenturmar aluno.");
+  }
 };
 
 export const enrollInTurmaHandler = async (
