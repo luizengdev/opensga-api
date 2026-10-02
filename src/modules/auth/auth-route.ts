@@ -2,8 +2,9 @@ import {FastifyInstance} from "fastify";
 import {ZodTypeProvider} from "fastify-type-provider-zod";
 
 import {Role} from "../../generated/prisma/client.js";
-import {getMeHandler, loginHandler} from "./auth-controller.js";
+import {changePasswordHandler, getMeHandler, loginHandler} from "./auth-controller.js";
 import {
+  changePasswordSchema,
   errorResponseSchema,
   loginResponseSchema,
   loginSchema,
@@ -48,6 +49,26 @@ export const authRoutes = async (app: FastifyInstance): Promise<void> => {
       },
     },
     getMeHandler,
+  );
+
+  typedApp.patch(
+    "/auth/senha",
+    {
+      onRequest: [app.authenticate],
+      schema: {
+        tags: ["Autenticação"],
+        summary: "Trocar a senha do usuário autenticado",
+        security: [{bearerAuth: []}],
+        body: changePasswordSchema,
+        response: {
+          200: messageResponseSchema,
+          400: errorResponseSchema,
+          401: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    changePasswordHandler,
   );
 
   // Rota Exclusiva de Teste para o Admin

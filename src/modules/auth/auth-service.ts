@@ -1,23 +1,38 @@
 import bcrypt from "bcrypt";
 
-import {findUserById, findUserByIdentifier} from "./auth-repository.js";
-import type {ILoginInput} from "./auth-schemas.js";
+import {
+  findUserById,
+  findUserByIdentifier,
+  findUserPasswordHash,
+  updateUserPasswordHash,
+} from "./auth-repository.js";
+import type {IChangePasswordInput, ILoginInput} from "./auth-schemas.js";
+
+export class AuthError extends Error {
+  readonly statusCode: 400 | 401 | 404;
+
+  constructor(message: string, statusCode: 400 | 401 | 404) {
+    super(message);
+    this.name = "AuthError";
+    this.statusCode = statusCode;
+  }
+}
 
 export const authenticateUser = async ({identificador, senha}: ILoginInput) => {
   const user = await findUserByIdentifier({identificador});
 
   if (!user) {
-    throw new Error("Credenciais inválidas. Verifique os dados informados.");
+    throw new AuthError("Credenciais inválidas. Verifique os dados informados.", 401);
   }
 
   if (!user.ativo) {
-    throw new Error("Conta inativa ou bloqueada. Contate o suporte acadêmico.");
+    throw new AuthError("Conta inativa ou bloqueada. Contate o suporte acadêmico.", 401);
   }
 
   const isPasswordValid = await bcrypt.compare(senha, user.senhaHash);
 
   if (!isPasswordValid) {
-    throw new Error("Credenciais inválidas. Verifique os dados informados.");
+    throw new AuthError("Credenciais inválidas. Verifique os dados informados.", 401);
   }
 
   return {
@@ -34,8 +49,29 @@ export const fetchUserProfile = async ({userId}: {userId: string}) => {
   const profile = await findUserById({id: userId});
 
   if (!profile) {
-    throw new Error("Usuário não encontrado.");
+    throw new AuthError("Usuário não encontrado.", 404);
   }
 
   return profile;
+};
+
+export const changeOwnPassword = async ({
+  userId,
+  senhaAtual,
+  senhaNova,
+}: IChangePasswordInput & {userId: string}) => {
+  const user = await findUserPasswordHash({id: userId});
+
+  if (!user) {
+    throw new AuthError("Usuário não encontrado.", 404);
+  }
+
+  const isCurrentValid = await bcrypt.compare(senhaAtual, user.senhaHash);
+
+  if (!isCurrentValid) {
+    throw new AuthError("A senha atual está incorreta.", 400);
+  }
+
+  const senhaHash = await bcrypt.hash(senhaNova, 10);
+  await updateUserPasswordHash({id: userId, senhaHash});
 };

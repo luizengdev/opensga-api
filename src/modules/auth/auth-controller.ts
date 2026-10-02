@@ -1,7 +1,16 @@
 import {FastifyReply, FastifyRequest} from "fastify";
 
-import type {ILoginInput} from "./auth-schemas.js";
-import {authenticateUser, fetchUserProfile} from "./auth-service.js";
+import type {IChangePasswordInput, ILoginInput} from "./auth-schemas.js";
+import {authenticateUser, AuthError, changeOwnPassword, fetchUserProfile} from "./auth-service.js";
+
+const replyWithAuthError = (error: unknown, reply: FastifyReply, fallback: string) => {
+  if (error instanceof AuthError) {
+    return reply.status(error.statusCode).send({error: error.message});
+  }
+
+  const message = error instanceof Error ? error.message : fallback;
+  return reply.status(400).send({error: message});
+};
 
 export const loginHandler = async (request: FastifyRequest<{Body: ILoginInput}>, reply: FastifyReply) => {
   try {
@@ -18,8 +27,7 @@ export const loginHandler = async (request: FastifyRequest<{Body: ILoginInput}>,
       user,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Erro ao processar login.";
-    return reply.status(401).send({error: message});
+    return replyWithAuthError(error, reply, "Erro ao processar login.");
   }
 };
 
@@ -29,7 +37,22 @@ export const getMeHandler = async (request: FastifyRequest, reply: FastifyReply)
     const profile = await fetchUserProfile({userId});
     return reply.status(200).send(profile);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Erro ao buscar perfil.";
-    return reply.status(404).send({error: message});
+    return replyWithAuthError(error, reply, "Erro ao buscar perfil.");
+  }
+};
+
+export const changePasswordHandler = async (
+  request: FastifyRequest<{Body: IChangePasswordInput}>,
+  reply: FastifyReply,
+) => {
+  try {
+    await changeOwnPassword({
+      userId: request.user.sub,
+      senhaAtual: request.body.senhaAtual,
+      senhaNova: request.body.senhaNova,
+    });
+    return reply.status(200).send({message: "Senha atualizada com sucesso."});
+  } catch (error) {
+    return replyWithAuthError(error, reply, "Erro ao atualizar senha.");
   }
 };

@@ -11,8 +11,8 @@ export const findUserByIdentifier = async ({identificador}: {identificador: stri
       ],
     },
     include: {
-      aluno: {select: {ra: true}},
-      professor: {select: {matricula: true, titulacao: true}},
+      aluno: {select: {id: true, ra: true}},
+      professor: {select: {id: true, matricula: true, titulacao: true}},
     },
   });
 };
@@ -28,8 +28,30 @@ export const findUserById = async ({id}: {id: string}) => {
       role: true,
       avatarUrl: true,
       ativo: true,
-      aluno: {select: {ra: true}},
-      professor: {select: {matricula: true, titulacao: true}},
+      aluno: {select: {id: true, ra: true}},
+      professor: {select: {id: true, matricula: true, titulacao: true}},
     },
+  });
+};
+
+export const findUserActiveStatus = async ({id}: {id: string}) => {
+  return prisma.user.findUnique({
+    where: {id},
+    select: {id: true, ativo: true},
+  });
+};
+
+export const findUserPasswordHash = async ({id}: {id: string}) => {
+  return prisma.user.findUnique({
+    where: {id},
+    select: {id: true, senhaHash: true},
+  });
+};
+
+export const updateUserPasswordHash = async ({id, senhaHash}: {id: string; senhaHash: string}) => {
+  return prisma.user.update({
+    where: {id},
+    data: {senhaHash},
+    select: {id: true},
   });
 };
