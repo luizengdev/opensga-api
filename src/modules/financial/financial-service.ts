@@ -1,5 +1,6 @@
 import {Prisma} from "../../generated/prisma/client.js";
 import {StatusFatura} from "../../generated/prisma/enums.js";
+import {dayjs} from "../../lib/dayjs.js";
 import {
   deleteFaturaById,
   findAlunoById,
@@ -37,11 +38,11 @@ const mapFatura = (fatura: {
     alunoId: fatura.alunoId,
     descricao: fatura.descricao,
     valor: Number(fatura.valor),
-    dataVencimento: fatura.dataVencimento.toISOString(),
+    dataVencimento: dayjs(fatura.dataVencimento).toISOString(),
     status: fatura.status,
     stripeInvoiceId: fatura.stripeInvoiceId,
     stripePaymentUrl: fatura.stripePaymentUrl,
-    pagoEm: fatura.pagoEm ? fatura.pagoEm.toISOString() : null,
+    pagoEm: fatura.pagoEm ? dayjs(fatura.pagoEm).toISOString() : null,
     aluno: fatura.aluno,
   };
 };
@@ -74,7 +75,7 @@ export const createNewFatura = async (input: ICreateFaturaInput) => {
 
 export const changeFaturaStatus = async ({id, data}: {id: string; data: IUpdateFaturaStatusInput}) => {
   const pagoEm =
-    data.status === StatusFatura.PAGA ? (data.pagoEm ? new Date(data.pagoEm) : new Date()) : (null);
+    data.status === StatusFatura.PAGA ? (data.pagoEm ? dayjs(data.pagoEm).toDate() : dayjs().toDate()) : (null);
 
   const fatura = await updateFaturaStatusById({id, status: data.status, pagoEm});
 

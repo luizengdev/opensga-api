@@ -1,4 +1,5 @@
 import {StatusMatricula} from "../../generated/prisma/enums.js";
+import {dayjs} from "../../lib/dayjs.js";
 import {
   countMatriculasByStatus,
   countOpenComplaints,
@@ -10,11 +11,11 @@ import {
 import type {IAdminDashboardOutput, IDashboardPeriodQuery, IProfessorDashboardOutput} from "./dashboard-schemas.js";
 
 const resolvePeriod = ({anoLetivo, semestreLetivo}: IDashboardPeriodQuery) => {
-  const now = new Date();
+  const now = dayjs();
 
   return {
-    anoLetivo: anoLetivo ?? now.getFullYear(),
-    semestreLetivo: semestreLetivo ?? (now.getMonth() < 6 ? 1 : 2),
+    anoLetivo: anoLetivo ?? now.year(),
+    semestreLetivo: semestreLetivo ?? (now.month() < 6 ? 1 : 2),
   };
 };
 
