@@ -29,6 +29,7 @@ Este documento define a arquitetura, padrões de engenharia, stack tecnológica 
 - **Banco de Dados & ORM**: PostgreSQL via Prisma 7 utilizando driver adapter `@prisma/adapter-pg`.
 - **Autenticação**: `@fastify/jwt` e `fastify-plugin` (`JWT_SECRET` e `JWT_EXPIRES_IN` via `src/lib/env.ts`). O Fastify não usa middleware no estilo Express: autenticação e RBAC são um plugin que decora a instância (`app.authenticate`, `app.authorize`) e as rotas aplicam esses hooks.
 - **Comunicação e Uploads**: Nodemailer (e-mails transacionais), Cloudinary (imagens/arquivos), Stripe (faturamento/mensalidades).
+- **Datas**: `dayjs` para manipular e formatar datas em runtime.
 
 ---
 
@@ -60,6 +61,7 @@ opensga-api/
     │   └── prisma/                 # Gerado pelo Prisma Client 7
     ├── lib/                        # Utilitários compartilhados
     │   ├── db.ts                   # Instância do Prisma com @prisma/adapter-pg
+    │   ├── dayjs.ts                # Instância configurada do dayjs (customParseFormat)
     │   ├── env.ts                  # Validação de variáveis de ambiente com Zod
     │   ├── mailer.ts               # Nodemailer
     │   ├── cloudinary.ts           # Uploads
@@ -110,7 +112,8 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 ### Código Compartilhado
 
-- Centralizado em `src/lib/` com nomes curtos: `env.ts`, `db.ts`, `mailer.ts`, `stripe.ts`, `cloudinary.ts`.
+- Centralizado em `src/lib/` com nomes curtos: `env.ts`, `db.ts`, `dayjs.ts`, `mailer.ts`, `stripe.ts`, `cloudinary.ts`.
+- Importar datas de `src/lib/dayjs.ts` (`import {dayjs} from "../../lib/dayjs.js"`), nunca direto de `"dayjs"`.
 - Prisma Client gerado em `src/generated/prisma/` e instanciado exclusivamente em `src/lib/db.ts`.
 
 ---
@@ -132,8 +135,11 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 ## 5. Regras de Datas, Timestamps e Validação Zod 4
 
-1. **Banco de Dados (Prisma)**: Todo campo de data/hora no banco deve ser `DateTime` anotado com `@db.Timestamptz()`.
-2. **Borda HTTP com Zod 4**:
+1. **Datas (runtime)**: **SEMPRE** use a biblioteca `dayjs` para manipular e formatar datas. Proibido `new Date()`, `Date.now()`, `Date.parse()`, getters nativos (`getFullYear`, `getMonth`) e outras libs (`moment`, `date-fns`, `luxon`) no código de aplicação.
+   - Conversão para persistência Prisma: `dayjs(...).toDate()`.
+   - Formatação / parsing: `dayjs(...).format(...)` e `dayjs(valor, formato)`.
+2. **Banco de Dados (Prisma)**: Todo campo de data/hora no banco deve ser `DateTime` anotado com `@db.Timestamptz()`.
+3. **Borda HTTP com Zod 4**:
    - Data no formato `YYYY-MM-DD`: utilizar exclusivamente `z.iso.date()`.
    - Data e hora com timestamp: utilizar exclusivamente `z.iso.datetime()`.
    - Horário (`HH:mm:ss`): utilizar `z.iso.time()`.
@@ -141,7 +147,7 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
    - E-mail: utilizar exclusivamente `z.email()`.
    - UUID: utilizar exclusivamente `z.uuid()`.
    - **PROIBIDO**: `z.string().date()`, `z.string().datetime()`, `z.string().time()`, `z.string().duration()`, `z.string().email()`, `z.string().uuid()`.
-3. **Enums**: Campos que espelham enums do Prisma devem utilizar `z.enum(NomeDoEnum)` importados de `src/generated/prisma/enums.js`, nunca `z.string()`.
+4. **Enums**: Campos que espelham enums do Prisma devem utilizar `z.enum(NomeDoEnum)` importados de `src/generated/prisma/enums.js`, nunca `z.string()`.
 
 ---
 

@@ -1,6 +1,7 @@
 import bcrypt from "bcrypt";
 
 import {Role} from "../../generated/prisma/enums.js";
+import {dayjs} from "../../lib/dayjs.js";
 import {
   countTurmasByProfessorUser,
   deleteUserById,
@@ -40,7 +41,7 @@ const mapAluno = (aluno: {id: string; ra: string; dataNascimento: Date; responsa
   return {
     id: aluno.id,
     ra: aluno.ra,
-    dataNascimento: aluno.dataNascimento.toISOString(),
+    dataNascimento: dayjs(aluno.dataNascimento).toISOString(),
     responsavelId: aluno.responsavelId,
     user: aluno.user,
   };

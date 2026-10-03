@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import bcrypt from "bcrypt";
 
 import {Role} from "../../generated/prisma/enums.js";
+import {dayjs} from "../../lib/dayjs.js";
 import {sendCredentialsEmail} from "../../lib/mailer.js";
 import {
   createStudentWithEnrollment,
@@ -72,7 +73,7 @@ export const executeEnrollment = async (input: ICreateEnrollmentInput) => {
     cpf: input.cpf,
     telefone: input.telefone,
     senhaHash: studentPassword.senhaHash,
-    dataNascimento: new Date(input.dataNascimento),
+    dataNascimento: dayjs(input.dataNascimento, "YYYY-MM-DD").toDate(),
     cursoId: input.cursoId,
     matrizCurricularId: input.matrizCurricularId,
     semestreIngresso: input.semestreIngresso,

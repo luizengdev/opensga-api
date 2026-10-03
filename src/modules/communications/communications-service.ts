@@ -1,4 +1,5 @@
 import {Role, StatusReclamacao, TipoReclamacao} from "../../generated/prisma/enums.js";
+import {dayjs} from "../../lib/dayjs.js";
 import {
   deleteComunicadoById,
   deleteReclamacaoById,
@@ -40,7 +41,7 @@ const mapComunicado = (comunicado: {
 }) => {
   return {
     ...comunicado,
-    criadoEm: comunicado.criadoEm.toISOString(),
+    criadoEm: dayjs(comunicado.criadoEm).toISOString(),
   };
 };
 
@@ -57,7 +58,7 @@ const mapReclamacao = (reclamacao: {
 }) => {
   return {
     ...reclamacao,
-    criadoEm: reclamacao.criadoEm.toISOString(),
+    criadoEm: dayjs(reclamacao.criadoEm).toISOString(),
   };
 };
 

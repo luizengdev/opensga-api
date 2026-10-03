@@ -1,5 +1,6 @@
 import {Prisma} from "../../generated/prisma/client.js";
 import {StatusFatura} from "../../generated/prisma/enums.js";
+import {dayjs} from "../../lib/dayjs.js";
 import {prisma} from "../../lib/db.js";
 import type {ICreateFaturaInput, IListFaturasQuery} from "./financial-schemas.js";
 
@@ -68,7 +69,7 @@ export const insertFatura = async (data: ICreateFaturaInput) => {
       alunoId: data.alunoId,
       descricao: data.descricao,
       valor: new Prisma.Decimal(data.valor),
-      dataVencimento: new Date(data.dataVencimento),
+      dataVencimento: dayjs(data.dataVencimento, "YYYY-MM-DD").toDate(),
       stripeInvoiceId: data.stripeInvoiceId,
       stripePaymentUrl: data.stripePaymentUrl,
     },

@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 
+import {dayjs} from "../src/lib/dayjs.js";
 import {prisma} from "../src/lib/db.js";
 
 async function main() {
@@ -122,9 +123,9 @@ async function main() {
       },
     }));
 
-  const agora = new Date();
-  const anoLetivo = agora.getFullYear();
-  const semestreLetivo = agora.getMonth() < 6 ? 1 : 2;
+  const agora = dayjs();
+  const anoLetivo = agora.year();
+  const semestreLetivo = agora.month() < 6 ? 1 : 2;
   const codigoTurma = `CALC1-${anoLetivo}.${semestreLetivo}`;
 
   const turma = await prisma.turma.upsert({
@@ -163,7 +164,7 @@ async function main() {
       data: {
         userId: alunoUser.id,
         ra: "2026000001",
-        dataNascimento: new Date("2004-03-15"),
+        dataNascimento: dayjs("2004-03-15", "YYYY-MM-DD").toDate(),
       },
     }));
 
@@ -208,7 +209,7 @@ async function main() {
         alunoId: aluno.id,
         descricao: "Mensalidade 2026.1",
         valor: 980.5,
-        dataVencimento: new Date("2026-04-10"),
+        dataVencimento: dayjs("2026-04-10", "YYYY-MM-DD").toDate(),
         status: "PENDENTE",
       },
     });

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 
 import {Prisma} from "../../generated/prisma/client.js";
 import {Role, StatusMatricula} from "../../generated/prisma/enums.js";
+import {dayjs} from "../../lib/dayjs.js";
 import {prisma} from "../../lib/db.js";
 
 export interface INovoResponsavelTx {
@@ -27,7 +28,7 @@ export interface ICreateStudentTxData {
 }
 
 const generateAcademicRecord = () => {
-  const currentYear = new Date().getFullYear();
+  const currentYear = dayjs().year();
   const suffix = crypto.randomInt(100000, 1_000_000);
   return `${currentYear}${suffix}`;
 };
