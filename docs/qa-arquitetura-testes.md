@@ -1,14 +1,14 @@
 # Especificação de Testes — OpenSGA API
 
-| Campo | Valor |
-| :--- | :--- |
-| Versão | 1.0.0 |
-| Data | 02/10/2026 |
-| Público | QA, Postman/Newman, Playwright (E2E do front), desenvolvimento |
-| Base HTTP | `{{API_BASE_URL}}` (dev: `http://localhost:3333`) |
-| Prefixo de negócio | `/api/v1` |
-| Contrato vivo | Scalar `/docs` e OpenAPI `/swagger.json` |
-| Fonte de regras | [brd.md](./brd.md) + implementação em `src/modules/` |
+| Campo              | Valor                                                          |
+| :----------------- | :------------------------------------------------------------- |
+| Versão             | 1.0.0                                                          |
+| Data               | 02/10/2026                                                     |
+| Público            | QA, Postman/Newman, Playwright (E2E do front), desenvolvimento |
+| Base HTTP          | `{{API_BASE_URL}}` (dev: `http://localhost:3333`)              |
+| Prefixo de negócio | `/api/v1`                                                      |
+| Contrato vivo      | Scalar `/docs` e OpenAPI `/swagger.json`                       |
+| Fonte de regras    | [brd.md](./brd.md) + implementação em `src/modules/`           |
 
 Este documento é a **fonte de verdade para testes**. Use-o para execução manual agora, collection Postman depois (pastas = seções 6–14; requests = IDs `QA-*`) e **Playwright no frontend** (um `test()` por ID, mesmos Given/When/Then).
 
@@ -40,13 +40,13 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
          └── Execução manual / Newman
 ```
 
-| Camada | O que cobre | Quando rodar |
-| :--- | :--- | :--- |
-| Smoke | `/health`, login admin, `GET /auth/me` | Sempre, antes de qualquer suíte |
-| Contrato | Status HTTP, `{ error, message? }`, campos obrigatórios | Cada release |
-| Negócio | Tabelas de decisão (notas, MEC, exclusão, RBAC) | Cada mudança no domínio |
-| Segurança | Sem token, token inválido, papel errado, conta inativa | Cada release |
-| Regressão | Fluxo ponta a ponta da seção 15 | Antes de merge em `main` |
+| Camada    | O que cobre                                             | Quando rodar                    |
+| :-------- | :------------------------------------------------------ | :------------------------------ |
+| Smoke     | `/health`, login admin, `GET /auth/me`                  | Sempre, antes de qualquer suíte |
+| Contrato  | Status HTTP, `{ error, message? }`, campos obrigatórios | Cada release                    |
+| Negócio   | Tabelas de decisão (notas, MEC, exclusão, RBAC)         | Cada mudança no domínio         |
+| Segurança | Sem token, token inválido, papel errado, conta inativa  | Cada release                    |
+| Regressão | Fluxo ponta a ponta da seção 15                         | Antes de merge em `main`        |
 
 **Ordem sugerida de execução:** identidade → acadêmico → matrícula → turma → enturmação → avaliação → dashboards → financeiro → comunicação → exclusões 409.
 
@@ -66,18 +66,18 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 ### 3.2 Forma de erro (obrigatória)
 
 ```json
-{ "error": "string", "message": "string opcional" }
+{"error": "string", "message": "string opcional"}
 ```
 
-| HTTP | Uso |
-| :--- | :--- |
-| 200 | GET/PATCH/DELETE com corpo |
-| 201 | POST de criação |
-| 400 | Validação Zod ou regra de negócio (CH, senha atual, matrícula inativa) |
-| 401 | Sem JWT, JWT inválido, credenciais erradas, conta inativa |
-| 403 | RBAC ou professor acessando turma/diário de outro docente |
-| 404 | Recurso inexistente |
-| 409 | Exclusão bloqueada por Restrict (filhos existentes) |
+| HTTP | Uso                                                                    |
+| :--- | :--------------------------------------------------------------------- |
+| 200  | GET/PATCH/DELETE com corpo                                             |
+| 201  | POST de criação                                                        |
+| 400  | Validação Zod ou regra de negócio (CH, senha atual, matrícula inativa) |
+| 401  | Sem JWT, JWT inválido, credenciais erradas, conta inativa              |
+| 403  | RBAC ou professor acessando turma/diário de outro docente              |
+| 404  | Recurso inexistente                                                    |
+| 409  | Exclusão bloqueada por Restrict (filhos existentes)                    |
 
 ### 3.3 Datas e enums
 
@@ -89,14 +89,14 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 
 ### 3.4 Variáveis Postman (preparar depois)
 
-| Variável | Exemplo |
-| :--- | :--- |
-| `baseUrl` | `http://localhost:3333` |
-| `token_admin` | JWT admin |
-| `token_professor` | JWT professor |
-| `token_aluno` | JWT aluno (só login/`/me`) |
-| `campusId`, `cursoId`, `matrizId`, `disciplinaId`, `turmaId` | UUIDs do seed / setup |
-| `matriculaId`, `diarioId`, `professorId`, `alunoUserId` | UUIDs do fluxo |
+| Variável                                                     | Exemplo                    |
+| :----------------------------------------------------------- | :------------------------- |
+| `baseUrl`                                                    | `http://localhost:3333`    |
+| `token_admin`                                                | JWT admin                  |
+| `token_professor`                                            | JWT professor              |
+| `token_aluno`                                                | JWT aluno (só login/`/me`) |
+| `campusId`, `cursoId`, `matrizId`, `disciplinaId`, `turmaId` | UUIDs do seed / setup      |
+| `matriculaId`, `diarioId`, `professorId`, `alunoUserId`      | UUIDs do fluxo             |
 
 ---
 
@@ -104,11 +104,11 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 
 Rodar seed: `npx prisma db seed --config prisma7.config.ts`.
 
-| Persona | Identificador | Senha | Role | Uso |
-| :--- | :--- | :--- | :--- | :--- |
-| Secretaria | `luizengdev@gmail.com` ou `000.000.000-00` | `Admin@123456` | `ADMIN` | CRUD + dashboard admin |
-| Docente | `professor@opensga.dev`, CPF `111.111.111-11` ou matrícula `PROF-001` | `Professor@123456` | `PROFESSOR` | Turmas próprias, diário, dashboard, avaliar |
-| Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001` | `Aluno@123456` | `ALUNO` | **Somente** login e `/me` |
+| Persona         | Identificador                                                         | Senha              | Role        | Uso                                         |
+| :-------------- | :-------------------------------------------------------------------- | :----------------- | :---------- | :------------------------------------------ |
+| Secretaria      | `testeadmin@opensga.dev` ou `000.000.000-00`                          | `Admin@123456`     | `ADMIN`     | CRUD + dashboard admin                      |
+| Docente         | `professor@opensga.dev`, CPF `111.111.111-11` ou matrícula `PROF-001` | `Professor@123456` | `PROFESSOR` | Turmas próprias, diário, dashboard, avaliar |
+| Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001`          | `Aluno@123456`     | `ALUNO`     | **Somente** login e `/me`                   |
 
 Dados acadêmicos criados pelo seed: campi `SEDE-REC` (5 cursos PRESENCIAL) e `POLO-EAD` (5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem A1/A2, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`.
 
@@ -118,18 +118,18 @@ Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`get
 
 ## 5. Matriz RBAC
 
-| Recurso | Público | ADMIN | PROFESSOR | ALUNO |
-| :--- | :---: | :---: | :---: | :---: |
-| `GET /health` | sim | — | — | — |
-| `POST /auth/login` | sim | — | — | — |
-| `GET /auth/me`, `PATCH /auth/senha` | | sim | sim | sim |
-| CRUD users, academic (exceto GET turma), matriculas, faturas, comunicados, ouvidoria | | sim | 403 | 403 |
-| `GET /academic/turmas`, `GET /academic/turmas/:id` | | todas | só as suas | 403 |
-| `GET /diario`, `GET /diario/:id` | | todos | só das suas turmas | 403 |
-| `POST /diario/enturmar`, `DELETE /diario/:id` | | sim | 403 | 403 |
-| `PATCH /diario/avaliar` | | sim | só se for titular | 403 |
-| `GET /dashboard/admin` | | sim | 403 | 403 |
-| `GET /dashboard/professor` | | 403 | sim | 403 |
+| Recurso                                                                              | Público | ADMIN |     PROFESSOR      | ALUNO |
+| :----------------------------------------------------------------------------------- | :-----: | :---: | :----------------: | :---: |
+| `GET /health`                                                                        |   sim   |   —   |         —          |   —   |
+| `POST /auth/login`                                                                   |   sim   |   —   |         —          |   —   |
+| `GET /auth/me`, `PATCH /auth/senha`                                                  |         |  sim  |        sim         |  sim  |
+| CRUD users, academic (exceto GET turma), matriculas, faturas, comunicados, ouvidoria |         |  sim  |        403         |  403  |
+| `GET /academic/turmas`, `GET /academic/turmas/:id`                                   |         | todas |     só as suas     |  403  |
+| `GET /diario`, `GET /diario/:id`                                                     |         | todos | só das suas turmas |  403  |
+| `POST /diario/enturmar`, `DELETE /diario/:id`                                        |         |  sim  |        403         |  403  |
+| `PATCH /diario/avaliar`                                                              |         |  sim  | só se for titular  |  403  |
+| `GET /dashboard/admin`                                                               |         |  sim  |        403         |  403  |
+| `GET /dashboard/professor`                                                           |         |  403  |        sim         |  403  |
 
 **CA-RBAC-01.** Sem `Authorization`, toda rota protegida retorna 401.  
 **CA-RBAC-02.** Token de professor em rota ADMIN-only retorna 403.  
@@ -177,7 +177,7 @@ Cenário: Professor tenta criar campus
 ```gherkin
 @QA-AUTH-01
 Cenário: Login unificado do administrador
-  Dado o identificador "luizengdev@gmail.com" e a senha "Admin@123456"
+  Dado o identificador "testeadmin@opensga.dev" e a senha "Admin@123456"
   Quando envio POST /api/v1/auth/login
   Então a resposta é 200
   E o corpo contém token JWT
@@ -467,12 +467,12 @@ Entrada: `diarioClasseId` + opcionais `notaA1`, `notaA2`, `notaAF` (0–10), `to
 
 Seja `MS = (A1 × 0,4) + (A2 × 0,6)` e `limiteFaltas = floor(chTotal × 0,25)`.
 
-| Condição | `aprovado` | `notaFinal` | `chCumprida` |
-| :--- | :--- | :--- | :--- |
-| Falta A1 ou A2 | `null` | `null` | 0 |
-| A1 e A2 lançadas e faltas > limite | `false` | MS | 0 |
-| A1 e A2, faltas ok, MS ≥ 6,0 | `true` | MS | chTotal |
-| A1 e A2, faltas ok, MS &lt; 6,0, sem AF | `null` | MS | 0 |
+| Condição                                | `aprovado`          | `notaFinal`     | `chCumprida`                 |
+| :-------------------------------------- | :------------------ | :-------------- | :--------------------------- |
+| Falta A1 ou A2                          | `null`              | `null`          | 0                            |
+| A1 e A2 lançadas e faltas > limite      | `false`             | MS              | 0                            |
+| A1 e A2, faltas ok, MS ≥ 6,0            | `true`              | MS              | chTotal                      |
+| A1 e A2, faltas ok, MS &lt; 6,0, sem AF | `null`              | MS              | 0                            |
 | A1 e A2, faltas ok, MS &lt; 6,0, com AF | `(MS + AF) / 2 ≥ 5` | `(MS + AF) / 2` | chTotal se aprovado, senão 0 |
 
 **CA-AVA-01.** Professor titular lança A1=7 e A2=7, faltas 0, CH 60 → aprovado true, notaFinal 7, chCumprida 60.  
@@ -672,14 +672,14 @@ Cenário: Responder reclamação
 
 ## 14. Integridade referencial (exclusões)
 
-| Ação | Esperado | ID |
-| :--- | :--- | :--- |
-| DELETE campus/curso/matriz com matrícula filha | 409 | QA-DEL-01 |
-| DELETE disciplina ou usuário professor com turma | 409 | QA-DEL-02 |
-| DELETE turma | 200; diários somem | QA-DEL-03 |
-| DELETE matrícula | 200; aluno permanece | QA-DEL-04 |
-| DELETE responsável (via user) | aluno fica com `responsavelId` null | QA-DEL-05 |
-| GET/DELETE id inexistente | 404 | QA-DEL-06 |
+| Ação                                             | Esperado                            | ID        |
+| :----------------------------------------------- | :---------------------------------- | :-------- |
+| DELETE campus/curso/matriz com matrícula filha   | 409                                 | QA-DEL-01 |
+| DELETE disciplina ou usuário professor com turma | 409                                 | QA-DEL-02 |
+| DELETE turma                                     | 200; diários somem                  | QA-DEL-03 |
+| DELETE matrícula                                 | 200; aluno permanece                | QA-DEL-04 |
+| DELETE responsável (via user)                    | aluno fica com `responsavelId` null | QA-DEL-05 |
+| GET/DELETE id inexistente                        | 404                                 | QA-DEL-06 |
 
 ```gherkin
 @QA-DEL-01
@@ -736,13 +736,13 @@ Cenário: Do campus à aprovação do aluno
 
 Os IDs `QA-*` são o nome do teste no front. Não invente cenário novo no Playwright se ele já existir aqui — implemente o Gherkin contra a UI.
 
-| Convenção | Valor |
-| :--- | :--- |
-| Arquivo | `e2e/<dominio>.spec.ts` (auth, academic, enrollment, grading, dashboard…) |
-| Título | `test('QA-AVA-01: aprovação direta', …)` |
-| Tag | `@p0` nos IDs da seção 18; `@api-only` se ainda não houver tela |
-| Auth | `storageState` por persona (admin / professor / aluno) gerado no `global-setup` via login unificado |
-| Dados | Seed da API + UUIDs criados no próprio spec (igual ao E2E da seção 15) |
+| Convenção | Valor                                                                                               |
+| :-------- | :-------------------------------------------------------------------------------------------------- |
+| Arquivo   | `e2e/<dominio>.spec.ts` (auth, academic, enrollment, grading, dashboard…)                           |
+| Título    | `test('QA-AVA-01: aprovação direta', …)`                                                            |
+| Tag       | `@p0` nos IDs da seção 18; `@api-only` se ainda não houver tela                                     |
+| Auth      | `storageState` por persona (admin / professor / aluno) gerado no `global-setup` via login unificado |
+| Dados     | Seed da API + UUIDs criados no próprio spec (igual ao E2E da seção 15)                              |
 
 **Primeira suíte do front (críticos, nesta ordem):**
 
@@ -764,17 +764,17 @@ Quando a tela ainda não existir, deixe o spec `test.skip` com o ID e o motivo (
 
 Pastas sugeridas (espelham este doc):
 
-1. `00-Smoke` — health, login admin/professor/aluno  
-2. `01-Auth` — me, senha, inativo  
-3. `02-RBAC` — 401/403  
-4. `03-Users`  
-5. `04-Academic` — campus, curso, disciplina, matriz, componente, MEC, turma  
-6. `05-Enrollment`  
-7. `06-Grading` — enturmar, listar, avaliar (tabela de decisão), desenturmar  
-8. `07-Dashboard`  
-9. `08-Financial`  
-10. `09-Communications`  
-11. `10-Deletes-409`  
+1. `00-Smoke` — health, login admin/professor/aluno
+2. `01-Auth` — me, senha, inativo
+3. `02-RBAC` — 401/403
+4. `03-Users`
+5. `04-Academic` — campus, curso, disciplina, matriz, componente, MEC, turma
+6. `05-Enrollment`
+7. `06-Grading` — enturmar, listar, avaliar (tabela de decisão), desenturmar
+8. `07-Dashboard`
+9. `08-Financial`
+10. `09-Communications`
+11. `10-Deletes-409`
 12. `11-E2E`
 
 Convenção de request: nome = ID (`QA-AVA-01`). Tests (pm.test): status code + 2–3 asserts de negócio. Pre-request: `pm.environment.set` dos UUIDs criados.
@@ -785,17 +785,17 @@ Ambientes: `local` (`baseUrl=http://localhost:3333`) e, depois, `staging`.
 
 ## 19. Rastreabilidade rápida
 
-| ID | Camada | Prioridade |
-| :--- | :--- | :--- |
-| QA-RBAC-* | Segurança | P0 |
-| QA-AUTH-* | Sessão | P0 |
-| QA-MTZ-02/03, QA-MEC-* | Regulatório | P0 |
-| QA-MAT-*, QA-ENT-* | Ingresso | P0 |
-| QA-AVA-* | Avaliação | P0 |
-| QA-TUR-03/04, QA-DIA-*, QA-DASH-* | Portal professor | P0 |
-| QA-DEL-* | Integridade | P1 |
-| QA-USR-*, QA-ACA-*, QA-FIN-*, QA-COM-*, QA-OUV-* | CRUD | P1 |
-| QA-E2E-01 | Regressão | P0 |
-| Smoke seção 16 | Gate | P0 |
+| ID                                               | Camada           | Prioridade |
+| :----------------------------------------------- | :--------------- | :--------- |
+| QA-RBAC-*                                        | Segurança        | P0         |
+| QA-AUTH-*                                        | Sessão           | P0         |
+| QA-MTZ-02/03, QA-MEC-*                           | Regulatório      | P0         |
+| QA-MAT-_, QA-ENT-_                               | Ingresso         | P0         |
+| QA-AVA-*                                         | Avaliação        | P0         |
+| QA-TUR-03/04, QA-DIA-_, QA-DASH-_                | Portal professor | P0         |
+| QA-DEL-*                                         | Integridade      | P1         |
+| QA-USR-_, QA-ACA-_, QA-FIN-_, QA-COM-_, QA-OUV-* | CRUD             | P1         |
+| QA-E2E-01                                        | Regressão        | P0         |
+| Smoke seção 16                                   | Gate             | P0         |
 
 Quando a collection existir, cada request deve citar o ID deste arquivo. Se a regra mudar no código, atualize **primeiro** o CA/BDD aqui e só então o Postman.

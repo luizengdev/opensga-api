@@ -441,11 +441,11 @@ async function main() {
   const senhaAluno = await bcrypt.hash("Aluno@123456", 10);
 
   const admin = await prisma.user.upsert({
-    where: {email: "luizengdev@gmail.com"},
+    where: {email: "testeadmin@opensga.dev"},
     update: {},
     create: {
       nome: "Luiz Almeida Alves Filho",
-      email: "luizengdev@gmail.com",
+      email: "testeadmin@opensga.dev",
       cpf: "000.000.000-00",
       senhaHash: senhaAdmin,
       role: "ADMIN",
