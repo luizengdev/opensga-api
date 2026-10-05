@@ -21,7 +21,7 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 3. Execute os critérios de aceite (CA) e os cenários Gherkin. Cada cenário tem um **ID de rastreio** para o Postman (`QA-AUTH-01`, etc.).
 4. Falha = divergência entre este spec e a API. Se a API estiver certa e o spec errado, atualize este arquivo.
 
-**Fora de escopo nesta versão:** portal aluno/responsável, webhook Stripe, upload Cloudinary, paginação, forgot-password, suíte automatizada no CI.
+**Fora de escopo nesta versão:** portal aluno/responsável, upload Cloudinary, paginação, forgot-password, suíte automatizada no CI.
 
 ---
 
@@ -582,6 +582,36 @@ Cenário: Baixa de fatura
   Quando envio PATCH /financeiro/faturas/:id/status com { "status": "PAGA" }
   Então status é PAGA
   E pagoEm não é null
+```
+
+### Checkout de matrícula e webhook Stripe
+
+`/financeiro/precos` — ADMIN. Um registro por `cursoId` (o `Curso` já carrega `modalidade`). O admin informa o valor em reais; a API cria/atualiza Product e Price no Stripe. Mudança de valor arquiva o Price antigo e cria um novo (`unit_amount` é imutável no Stripe).
+
+**CA-FIN-PRECO-01.** POST com `cursoId` válido e `valor` > 0 → 201, com `stripePriceId`.  
+**CA-FIN-PRECO-02.** Segundo POST para o mesmo curso → 409.  
+**CA-FIN-PRECO-03.** PATCH `valor` gera novo `stripePriceId`.  
+**CA-FIN-PRECO-04.** Curso inexistente → 404.
+
+`POST /api/checkout` e `POST /api/v1/checkout` — públicos. Corpo: `studentId`, `email`, `cursoModalidadeId` (id do `Curso`). A API usa o `stripePriceId` da precificação **ativa** em `precos_curso` e cria `checkout.sessions` em `mode=subscription` com o cupom `isencao-inscricao` (100% `once`). Metadata: `studentId`, `cursoId`.
+
+`POST /webhooks/stripe` — público, body raw (`Buffer`). Valida `Stripe-Signature` com `STRIPE_WEBHOOK_SECRET`.
+
+**CA-FIN-06.** POST `/api/checkout` com aluno e curso válidos → 200 e `url` do Stripe.  
+**CA-FIN-07.** `studentId` inexistente → 404.  
+**CA-FIN-08.** `cursoModalidadeId` inexistente → 404.  
+**CA-FIN-09.** Webhook sem `Stripe-Signature` → 400.  
+**CA-FIN-10.** `checkout.session.completed` com `metadata.studentId` atualiza a matrícula para `ATIVO`.  
+**CA-FIN-11.** `invoice.payment_succeeded` upsert da fatura `PAGA` por `stripeInvoiceId`.  
+**CA-FIN-12.** `invoice.payment_failed` upsert da fatura `ATRASADA`.
+
+```gherkin
+@QA-FIN-06
+Cenário: Checkout com isenção da primeira parcela
+  Dado um aluno existente e um curso com precificação ativa
+  Quando envio POST /api/checkout com studentId, email e cursoModalidadeId
+  Então a resposta é 200
+  E url começa com https://checkout.stripe.com
 ```
 
 ---

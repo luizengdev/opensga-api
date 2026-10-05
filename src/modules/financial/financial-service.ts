@@ -1,20 +1,49 @@
+import Stripe from "stripe";
+
 import {Prisma} from "../../generated/prisma/client.js";
 import {StatusFatura} from "../../generated/prisma/enums.js";
 import {dayjs} from "../../lib/dayjs.js";
+import {env} from "../../lib/env.js";
 import {
+  createStripeTuitionCatalog,
+  rotateStripeTuitionPrice,
+  setStripeTuitionCatalogActive,
+  stripe,
+} from "../../lib/stripe.js";
+import {
+  activateMatriculaByAlunoAndCurso,
   deleteFaturaById,
+  deletePrecoCursoById,
   findAlunoById,
+  findCursoForCheckout,
   findFaturaById,
+  findPrecoCursoAtivoByCursoId,
+  findPrecoCursoByCursoId,
+  findPrecoCursoById,
   insertFatura,
+  insertPrecoCurso,
   listFaturas,
+  listPrecosCurso,
   updateFaturaStatusById,
+  updatePrecoCursoById,
+  upsertFaturaFromStripeInvoice,
 } from "./financial-repository.js";
-import type {ICreateFaturaInput, IFaturaOutput, IListFaturasQuery, IUpdateFaturaStatusInput} from "./financial-schemas.js";
+import type {
+  ICreateCheckoutInput,
+  ICreateFaturaInput,
+  ICreatePrecoCursoInput,
+  IFaturaOutput,
+  IListFaturasQuery,
+  IListPrecosQuery,
+  IPrecoCursoOutput,
+  IUpdateFaturaStatusInput,
+  IUpdatePrecoCursoInput,
+} from "./financial-schemas.js";
 
 export class FinancialError extends Error {
-  readonly statusCode: 400 | 404;
+  readonly statusCode: 400 | 404 | 409;
 
-  constructor(message: string, statusCode: 400 | 404) {
+  constructor(message: string, statusCode: 400 | 404 | 409) {
     super(message);
     this.name = "FinancialError";
     this.statusCode = statusCode;
@@ -91,6 +120,335 @@ export const removeFatura = async (id: string) => {
 
   if (!deleted) {
     throw new FinancialError("Fatura não encontrada.", 404);
+  }
+
+  return deleted;
+};
+
+interface ICheckoutMetadata {
+  studentId?: string;
+  cursoId?: string;
+}
+
+const readCheckoutMetadata = (metadata: Stripe.Metadata | null | undefined): ICheckoutMetadata => {
+  if (!metadata) {
+    return {};
+  }
+
+  return {
+    studentId: metadata.studentId,
+    cursoId: metadata.cursoId,
+  };
+};
+
+const toReais = (valor: Prisma.Decimal) => Number(valor);
+
+const mapPrecoCurso = (preco: {
+  id: string;
+  cursoId: string;
+  valor: Prisma.Decimal;
+  moeda: string;
+  intervalo: IPrecoCursoOutput["intervalo"];
+  stripeProductId: string;
+  stripePriceId: string;
+  ativo: boolean;
+  criadoEm: Date;
+  atualizadoEm: Date;
+  curso: IPrecoCursoOutput["curso"];
+}): IPrecoCursoOutput => {
+  return {
+    id: preco.id,
+    cursoId: preco.cursoId,
+    valor: toReais(preco.valor),
+    moeda: preco.moeda,
+    intervalo: preco.intervalo,
+    stripeProductId: preco.stripeProductId,
+    stripePriceId: preco.stripePriceId,
+    ativo: preco.ativo,
+    criadoEm: dayjs(preco.criadoEm).toISOString(),
+    atualizadoEm: dayjs(preco.atualizadoEm).toISOString(),
+    curso: preco.curso,
+  };
+};
+
+const getInvoiceSubscriptionId = (invoice: Stripe.Invoice): string | null => {
+  const parent = invoice.parent;
+
+  if (parent?.type !== "subscription_details") {
+    return null;
+  }
+
+  const subscription = parent.subscription_details?.subscription;
+
+  if (typeof subscription === "string") {
+    return subscription;
+  }
+
+  if (subscription && typeof subscription === "object" && "id" in subscription) {
+    return subscription.id;
+  }
+
+  return null;
+};
+
+const resolveStudentContextFromInvoice = async (invoice: Stripe.Invoice): Promise<ICheckoutMetadata> => {
+  const fromInvoice = readCheckoutMetadata(invoice.metadata);
+
+  if (fromInvoice.studentId) {
+    return fromInvoice;
+  }
+
+  const parent = invoice.parent;
+
+  if (parent?.type === "subscription_details") {
+    const fromParent = readCheckoutMetadata(parent.subscription_details?.metadata);
+
+    if (fromParent.studentId) {
+      return fromParent;
+    }
+  }
+
+  const subscriptionId = getInvoiceSubscriptionId(invoice);
+
+  if (!subscriptionId) {
+    return {};
+  }
+
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  return readCheckoutMetadata(subscription.metadata);
+};
+
+const syncFaturaFromInvoice = async ({
+  invoice,
+  status,
+}: {
+  invoice: Stripe.Invoice;
+  status: StatusFatura;
+}) => {
+  const {studentId} = await resolveStudentContextFromInvoice(invoice);
+
+  if (!studentId) {
+    return;
+  }
+
+  const aluno = await findAlunoById(studentId);
+
+  if (!aluno) {
+    return;
+  }
+
+  const amountInCents = status === StatusFatura.PAGA ? invoice.amount_paid : invoice.amount_due;
+  const firstLine = invoice.lines.data[0];
+  const pagoEm = status === StatusFatura.PAGA ? dayjs().toDate() : null;
+
+  await upsertFaturaFromStripeInvoice({
+    alunoId: studentId,
+    descricao: invoice.description ?? firstLine?.description ?? "Mensalidade acadêmica",
+    valor: amountInCents / 100,
+    dataVencimento: invoice.due_date ? dayjs.unix(invoice.due_date).toDate() : dayjs().toDate(),
+    status,
+    stripeInvoiceId: invoice.id,
+    stripePaymentUrl: invoice.hosted_invoice_url ?? null,
+    pagoEm,
+  });
+};
+
+export const createEnrollmentCheckout = async (input: ICreateCheckoutInput) => {
+  const aluno = await findAlunoById(input.studentId);
+
+  if (!aluno) {
+    throw new FinancialError("Aluno informado não existe.", 404);
+  }
+
+  const curso = await findCursoForCheckout(input.cursoModalidadeId);
+
+  if (!curso) {
+    throw new FinancialError("Curso/modalidade informado não existe.", 404);
+  }
+
+  const preco = await findPrecoCursoAtivoByCursoId(curso.id);
+
+  if (!preco) {
+    throw new FinancialError("Curso sem precificação ativa cadastrada.", 400);
+  }
+
+  const stripePriceId = preco.stripePriceId;
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    customer_email: input.email,
+    client_reference_id: input.studentId,
+    line_items: [{price: stripePriceId, quantity: 1}],
+    discounts: [{coupon: env.STRIPE_INSCRICAO_COUPON_ID}],
+    payment_method_collection: "always",
+    locale: "pt-BR",
+    success_url: `${env.FRONTEND_URL}/inscricao?checkout=success`,
+    cancel_url: `${env.FRONTEND_URL}/inscricao?checkout=cancel`,
+    metadata: {
+      studentId: input.studentId,
+      cursoId: curso.id,
+    },
+    subscription_data: {
+      metadata: {
+        studentId: input.studentId,
+        cursoId: curso.id,
+      },
+    },
+  });
+
+  if (!session.url) {
+    throw new FinancialError("Não foi possível gerar a URL de checkout.", 400);
+  }
+
+  return {
+    url: session.url,
+    sessionId: session.id,
+  };
+};
+
+export const markStudentAsEnrolled = async (metadata: Stripe.Metadata | null) => {
+  const {studentId, cursoId} = readCheckoutMetadata(metadata);
+
+  if (!studentId) {
+    return;
+  }
+
+  await activateMatriculaByAlunoAndCurso({
+    alunoId: studentId,
+    cursoId,
+  });
+};
+
+export const processStripeWebhookEvent = async (event: Stripe.Event) => {
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const session = event.data.object;
+      await markStudentAsEnrolled(session.metadata);
+      return;
+    }
+    case "invoice.payment_succeeded": {
+      await syncFaturaFromInvoice({
+        invoice: event.data.object,
+        status: StatusFatura.PAGA,
+      });
+      return;
+    }
+    case "invoice.payment_failed": {
+      await syncFaturaFromInvoice({
+        invoice: event.data.object,
+        status: StatusFatura.ATRASADA,
+      });
+      return;
+    }
+    default:
+      return;
+  }
+};
+
+export const fetchPrecosCurso = async (query: IListPrecosQuery) => {
+  const precos = await listPrecosCurso(query);
+  return precos.map(mapPrecoCurso);
+};
+
+export const fetchPrecoCursoById = async (id: string) => {
+  const preco = await findPrecoCursoById(id);
+
+  if (!preco) {
+    throw new FinancialError("Preço do curso não encontrado.", 404);
+  }
+
+  return mapPrecoCurso(preco);
+};
+
+export const createNewPrecoCurso = async (input: ICreatePrecoCursoInput) => {
+  const curso = await findCursoForCheckout(input.cursoId);
+
+  if (!curso) {
+    throw new FinancialError("Curso informado não existe.", 404);
+  }
+
+  const existing = await findPrecoCursoByCursoId(input.cursoId);
+
+  if (existing) {
+    throw new FinancialError("Já existe precificação cadastrada para este curso/modalidade.", 409);
+  }
+
+  const catalog = await createStripeTuitionCatalog({
+    cursoId: curso.id,
+    modalidade: curso.modalidade,
+    nome: curso.nome,
+    valor: input.valor,
+  });
+
+  const preco = await insertPrecoCurso({
+    cursoId: curso.id,
+    valor: input.valor,
+    stripeProductId: catalog.stripeProductId,
+    stripePriceId: catalog.stripePriceId,
+  });
+
+  return mapPrecoCurso(preco);
+};
+
+export const changePrecoCurso = async ({id, data}: {id: string; data: IUpdatePrecoCursoInput}) => {
+  const current = await findPrecoCursoById(id);
+
+  if (!current) {
+    throw new FinancialError("Preço do curso não encontrado.", 404);
+  }
+
+  let stripePriceId = current.stripePriceId;
+
+  if (data.valor !== undefined && data.valor !== toReais(current.valor)) {
+    const rotated = await rotateStripeTuitionPrice({
+      cursoId: current.cursoId,
+      modalidade: current.curso.modalidade,
+      stripePriceId: current.stripePriceId,
+      stripeProductId: current.stripeProductId,
+      valor: data.valor,
+    });
+    stripePriceId = rotated.stripePriceId;
+  }
+
+  if (data.ativo !== undefined && data.ativo !== current.ativo) {
+    await setStripeTuitionCatalogActive({
+      ativo: data.ativo,
+      stripePriceId,
+      stripeProductId: current.stripeProductId,
+    });
+  }
+
+  const preco = await updatePrecoCursoById({
+    id,
+    valor: data.valor,
+    ativo: data.ativo,
+    stripePriceId,
+  });
+
+  if (!preco) {
+    throw new FinancialError("Preço do curso não encontrado.", 404);
+  }
+
+  return mapPrecoCurso(preco);
+};
+
+export const removePrecoCurso = async (id: string) => {
+  const current = await findPrecoCursoById(id);
+
+  if (!current) {
+    throw new FinancialError("Preço do curso não encontrado.", 404);
+  }
+
+  await setStripeTuitionCatalogActive({
+    ativo: false,
+    stripePriceId: current.stripePriceId,
+    stripeProductId: current.stripeProductId,
+  });
+
+  const deleted = await deletePrecoCursoById(id);
+
+  if (!deleted) {
+    throw new FinancialError("Preço do curso não encontrado.", 404);
   }
 
   return deleted;

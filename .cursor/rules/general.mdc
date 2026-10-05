@@ -74,7 +74,7 @@ opensga-api/
     │   ├── academic/               # Campus, Cursos, Disciplinas, Matrizes, Componentes, Turmas
     │   ├── enrollment/             # Matrícula, RA e ciclo de status
     │   ├── grading/                # Diário de Classe, Notas (A1, A2, AF) e Faltas
-    │   ├── financial/              # Faturas acadêmicas (webhooks Stripe ainda não)
+    │   ├── financial/              # Faturas acadêmicas, Checkout de matrícula e webhooks Stripe
     │   ├── communications/         # Comunicados institucionais e ouvidoria
     │   └── dashboard/              # KPIs leves ADMIN e PROFESSOR
     └── index.ts                    # Bootstrap, /health e error handler HTTP
@@ -89,7 +89,10 @@ Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 - `/academic` — campi, cursos, disciplinas, matrizes, componentes (`ADMIN`); GET turmas também `PROFESSOR` (só as suas)
 - `/matriculas` — vínculo acadêmico (`ADMIN`)
 - `/diario` — enturmação `ADMIN`; GET lista/id `ADMIN`+`PROFESSOR` (professor filtrado pelo JWT); `PATCH /diario/avaliar` `ADMIN`+`PROFESSOR` titular
+- `/financeiro/precos` — precificação por curso/modalidade (`ADMIN`); sync Stripe Product/Price
 - `/financeiro/faturas` — contas a receber (`ADMIN`)
+- `POST /api/checkout` e `POST /api/v1/checkout` — Checkout Stripe de matrícula (público)
+- `POST /webhooks/stripe` — webhook Stripe (raw body, público, fora de `/api/v1`)
 - `/comunicados` e `/ouvidoria/reclamacoes` — mural e ouvidoria (`ADMIN`)
 - `/dashboard/admin` (`ADMIN`) e `/dashboard/professor` (`PROFESSOR`) — resumos do período (`anoLetivo` / `semestreLetivo` opcionais)
 - `GET /health` — `{ status: "ok" }`, público, fora de `/api/v1`

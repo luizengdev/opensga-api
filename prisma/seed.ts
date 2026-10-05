@@ -49,6 +49,25 @@ async function main() {
       },
     }));
 
+  const stripeProductId = process.env.STRIPE_PRODUCT_PRESENCIAL;
+  const stripePriceId = process.env.STRIPE_PRICE_PRESENCIAL;
+
+  if (stripeProductId && stripePriceId) {
+    await prisma.precoCurso.upsert({
+      where: {cursoId: curso.id},
+      create: {
+        cursoId: curso.id,
+        valor: 1290,
+        stripeProductId,
+        stripePriceId,
+      },
+      update: {
+        stripeProductId,
+        stripePriceId,
+      },
+    });
+  }
+
   const matrizExistente = await prisma.matrizCurricular.findFirst({
     where: {cursoId: curso.id, nome: "Matriz 2026.1"},
   });
