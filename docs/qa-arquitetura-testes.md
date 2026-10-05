@@ -110,7 +110,7 @@ Rodar seed: `npx prisma db seed --config prisma7.config.ts`.
 | Docente | `professor@opensga.dev`, CPF `111.111.111-11` ou matrícula `PROF-001` | `Professor@123456` | `PROFESSOR` | Turmas próprias, diário, dashboard, avaliar |
 | Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001` | `Aluno@123456` | `ALUNO` | **Somente** login e `/me` |
 
-Dados acadêmicos criados pelo seed: campus `SEDE-REC`, curso Engenharia de Software, matriz 2026.1, disciplina `CALC1`, turma `CALC1-{ano}.{semestre}` do **período corrente**, 1 diário sem notas, 1 fatura `PENDENTE`, 1 comunicado ADMIN/PROFESSOR.
+Dados acadêmicos criados pelo seed: campi `SEDE-REC` (5 cursos PRESENCIAL) e `POLO-EAD` (5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem A1/A2, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`.
 
 Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`getMonth() < 6`), senão `2`. Dashboard e seed usam a mesma regra.
 
