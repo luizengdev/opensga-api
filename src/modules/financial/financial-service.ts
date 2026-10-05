@@ -4,6 +4,7 @@ import {Prisma} from "../../generated/prisma/client.js";
 import {StatusFatura} from "../../generated/prisma/enums.js";
 import {dayjs} from "../../lib/dayjs.js";
 import {env} from "../../lib/env.js";
+import {EnrollmentError, ensureCandidateForCheckout} from "../enrollment/enrollment-service.js";
 import {
   createStripeTuitionCatalog,
   rotateStripeTuitionPrice,
@@ -22,6 +23,7 @@ import {
   findPrecoCursoById,
   insertFatura,
   insertPrecoCurso,
+  listCatalogoCursos,
   listFaturas,
   listPrecosCurso,
   updateFaturaStatusById,
@@ -29,8 +31,10 @@ import {
   upsertFaturaFromStripeInvoice,
 } from "./financial-repository.js";
 import type {
+  ICatalogoCurso,
   ICreateCheckoutInput,
   ICreateFaturaInput,
+  ICreatePublicInscricaoInput,
   ICreatePrecoCursoInput,
   IFaturaOutput,
   IListFaturasQuery,
@@ -304,6 +308,66 @@ export const createEnrollmentCheckout = async (input: ICreateCheckoutInput) => {
     url: session.url,
     sessionId: session.id,
   };
+};
+
+const inferTipoGraduacao = (nome: string, duracaoSemestres: number): ICatalogoCurso["tipoGraduacao"] => {
+  const normalized = nome.toLowerCase();
+
+  if (normalized.includes("pedagogia") || normalized.includes("licenciatura")) {
+    return "LICENCIATURA";
+  }
+
+  if (
+    duracaoSemestres <= 6 ||
+    normalized.includes("análise e desenvolvimento") ||
+    normalized.includes("gestão de ti") ||
+    normalized.includes("marketing")
+  ) {
+    return "TECNOLOGO";
+  }
+
+  return "BACHARELADO";
+};
+
+export const fetchCatalogoCursos = async (): Promise<ICatalogoCurso[]> => {
+  const ofertas = await listCatalogoCursos();
+
+  return ofertas.map((oferta) => ({
+    cursoId: oferta.curso.id,
+    nome: oferta.curso.nome,
+    modalidade: oferta.curso.modalidade,
+    tipoGraduacao: inferTipoGraduacao(oferta.curso.nome, oferta.curso.duracaoSemestres),
+    duracaoSemestres: oferta.curso.duracaoSemestres,
+    campus: oferta.curso.campus,
+    valor: toReais(oferta.valor),
+    moeda: oferta.moeda,
+    intervalo: oferta.intervalo,
+  }));
+};
+
+export const createPublicInscricaoCheckout = async (input: ICreatePublicInscricaoInput) => {
+  try {
+    const candidate = await ensureCandidateForCheckout({
+      nome: input.nome,
+      email: input.email,
+      cpf: input.cpf,
+      telefone: input.telefone,
+      dataNascimento: input.dataNascimento,
+      cursoId: input.cursoModalidadeId,
+    });
+
+    return await createEnrollmentCheckout({
+      studentId: candidate.alunoId,
+      email: input.email,
+      cursoModalidadeId: input.cursoModalidadeId,
+    });
+  } catch (error) {
+    if (error instanceof EnrollmentError) {
+      throw new FinancialError(error.message, error.statusCode);
+    }
+
+    throw error;
+  }
 };
 
 export const markStudentAsEnrolled = async (metadata: Stripe.Metadata | null) => {

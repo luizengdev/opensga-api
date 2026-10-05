@@ -2,14 +2,18 @@ import crypto from "node:crypto";
 
 import bcrypt from "bcrypt";
 
-import {Role} from "../../generated/prisma/enums.js";
+import {Role, StatusMatricula} from "../../generated/prisma/enums.js";
 import {dayjs} from "../../lib/dayjs.js";
 import {sendCredentialsEmail} from "../../lib/mailer.js";
 import {
+  createPreMatricula,
   createStudentWithEnrollment,
   deleteEnrollmentById,
+  findActiveMatrizByCursoId,
   findActiveMatrizById,
   findEnrollmentById,
+  findMatriculaByAlunoAndCurso,
+  findCandidateByCpfAndEmail,
   findUserByCpfOrEmail,
   listEnrollments,
   updateEnrollmentStatus,
@@ -100,6 +104,85 @@ export const executeEnrollment = async (input: ICreateEnrollmentInput) => {
   }
 
   return enrollmentResult;
+};
+
+const currentSemestreIngresso = () => {
+  const now = dayjs();
+  const semestre = now.month() < 6 ? 1 : 2;
+  return `${now.year()}.${semestre}`;
+};
+
+export const ensureCandidateForCheckout = async (input: {
+  nome: string;
+  email: string;
+  cpf: string;
+  telefone?: string;
+  dataNascimento: string;
+  cursoId: string;
+}) => {
+  const matriz = await findActiveMatrizByCursoId(input.cursoId);
+
+  if (!matriz) {
+    throw new EnrollmentError("Curso sem matriz curricular ativa para matrícula.", 404);
+  }
+
+  const semestreIngresso = currentSemestreIngresso();
+  const email = input.email.trim().toLowerCase();
+  const {userByEmail, userByCpf} = await findCandidateByCpfAndEmail({
+    cpf: input.cpf,
+    email,
+  });
+
+  if (userByEmail && userByCpf && userByEmail.id !== userByCpf.id) {
+    throw new EnrollmentError("CPF e e-mail pertencem a cadastros diferentes.", 400);
+  }
+
+  const existingUser = userByEmail ?? userByCpf;
+
+  if (existingUser) {
+    if (existingUser.role !== Role.ALUNO || !existingUser.aluno) {
+      throw new EnrollmentError("CPF ou e-mail já cadastrado na instituição.", 400);
+    }
+
+    const matricula = await findMatriculaByAlunoAndCurso({
+      alunoId: existingUser.aluno.id,
+      cursoId: input.cursoId,
+    });
+
+    if (!matricula) {
+      await createPreMatricula({
+        alunoId: existingUser.aluno.id,
+        cursoId: input.cursoId,
+        matrizCurricularId: matriz.id,
+        semestreIngresso,
+      });
+    }
+
+    return {alunoId: existingUser.aluno.id};
+  }
+
+  const studentPassword = await createProvisionalPassword();
+  const enrollmentResult = await createStudentWithEnrollment({
+    nome: input.nome,
+    email,
+    cpf: input.cpf,
+    telefone: input.telefone,
+    senhaHash: studentPassword.senhaHash,
+    dataNascimento: dayjs(input.dataNascimento, "YYYY-MM-DD").toDate(),
+    cursoId: input.cursoId,
+    matrizCurricularId: matriz.id,
+    semestreIngresso,
+    status: StatusMatricula.PRE_MATRICULADO,
+  });
+
+  notifyCredentials({
+    toEmail: email,
+    nome: input.nome,
+    identificador: enrollmentResult.ra,
+    senhaProvisoria: studentPassword.senhaProvisoria,
+  });
+
+  return {alunoId: enrollmentResult.alunoId};
 };
 
 const resolveGuardian = async (input: ICreateEnrollmentInput) => {

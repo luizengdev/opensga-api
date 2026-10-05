@@ -108,6 +108,27 @@ export const findPrecoCursoAtivoByCursoId = async (cursoId: string) => {
   });
 };
 
+export const listCatalogoCursos = async () => {
+  return prisma.precoCurso.findMany({
+    where: {ativo: true},
+    select: {
+      valor: true,
+      moeda: true,
+      intervalo: true,
+      curso: {
+        select: {
+          id: true,
+          nome: true,
+          modalidade: true,
+          duracaoSemestres: true,
+          campus: {select: {nome: true, cidade: true, estado: true}},
+        },
+      },
+    },
+    orderBy: {curso: {nome: "asc"}},
+  });
+};
+
 export const insertPrecoCurso = async ({
   cursoId,
   valor,

@@ -593,10 +593,17 @@ Cenário: Baixa de fatura
 **CA-FIN-PRECO-03.** PATCH `valor` gera novo `stripePriceId`.  
 **CA-FIN-PRECO-04.** Curso inexistente → 404.
 
+`GET /api/catalogo` e `GET /api/v1/catalogo` — públicos. Lista cursos com `PrecoCurso` **ativo** (sem IDs Stripe): `cursoId`, `nome`, `modalidade`, `duracaoSemestres`, `campus`, `valor`, `moeda`, `intervalo`.
+
+`POST /api/inscricao` e `POST /api/v1/inscricao` — públicos. Corpo: `nome`, `email`, `cpf` (14 chars), `telefone?`, `dataNascimento` (`YYYY-MM-DD`), `cursoModalidadeId`. Cria aluno + matrícula `PRE_MATRICULADO` (ou reutiliza aluno existente identificado pelo CPF ou pelo e-mail) e devolve a sessão Stripe. Se CPF e e-mail apontarem para pessoas diferentes, 400.
+
 `POST /api/checkout` e `POST /api/v1/checkout` — públicos. Corpo: `studentId`, `email`, `cursoModalidadeId` (id do `Curso`). A API usa o `stripePriceId` da precificação **ativa** em `precos_curso` e cria `checkout.sessions` em `mode=subscription` com o cupom `isencao-inscricao` (100% `once`). Metadata: `studentId`, `cursoId`.
 
 `POST /webhooks/stripe` — público, body raw (`Buffer`). Valida `Stripe-Signature` com `STRIPE_WEBHOOK_SECRET`.
 
+**CA-FIN-CAT-01.** GET `/api/catalogo` → 200 e somente cursos com preço ativo.
+**CA-FIN-INS-01.** POST `/api/inscricao` com dados válidos e curso precificado → 200 e `url` do Stripe; matrícula `PRE_MATRICULADO`.
+**CA-FIN-INS-02.** POST `/api/inscricao` com CPF/e-mail de não-aluno → 400.
 **CA-FIN-06.** POST `/api/checkout` com aluno e curso válidos → 200 e `url` do Stripe.  
 **CA-FIN-07.** `studentId` inexistente → 404.  
 **CA-FIN-08.** `cursoModalidadeId` inexistente → 404.  
