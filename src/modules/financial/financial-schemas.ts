@@ -61,10 +61,50 @@ export const createCheckoutSchema = z.object({
   cursoModalidadeId: z.uuid(),
 });
 
+export const checkoutStatusSchema = z.enum(["PRE_MATRICULADO", "AGUARDANDO_PAGAMENTO"]);
+
 export const checkoutResponseSchema = z.object({
-  url: z.url(),
-  sessionId: z.string().min(1),
+  url: z.url().nullable(),
+  sessionId: z.string().min(1).nullable(),
+  requiresCheckout: z.boolean(),
+  status: checkoutStatusSchema,
+  acesso: z
+    .object({
+      email: z.email(),
+      ra: z.string().min(1),
+      senhaProvisoria: z.string().min(1).nullable(),
+    })
+    .nullable(),
 });
+
+export const createPublicInscricaoSchema = z.object({
+  nome: z.string().min(3).max(150),
+  email: z.email().max(150),
+  cpf: z.string().length(14),
+  telefone: z.string().min(10).max(20).optional(),
+  dataNascimento: z.iso.date(),
+  cursoModalidadeId: z.uuid(),
+});
+
+export const tipoGraduacaoSchema = z.enum(["BACHARELADO", "LICENCIATURA", "TECNOLOGO"]);
+
+export const catalogoCursoSchema = z.object({
+  cursoId: z.uuid(),
+  nome: z.string(),
+  modalidade: z.enum(ModalidadeCurso),
+  tipoGraduacao: tipoGraduacaoSchema,
+  duracaoSemestres: z.number().int(),
+  campus: z.object({
+    nome: z.string(),
+    cidade: z.string(),
+    estado: z.string(),
+  }),
+  valor: z.number(),
+  moeda: z.string(),
+  intervalo: z.enum(IntervaloCobranca),
+});
+
+export const catalogoCursoListResponseSchema = z.array(catalogoCursoSchema);
 
 export const webhookReceivedResponseSchema = z.object({
   received: z.literal(true),
@@ -76,6 +116,8 @@ export type IUpdateFaturaStatusInput = z.infer<typeof updateFaturaStatusSchema>;
 export type IFaturaOutput = z.infer<typeof faturaResponseSchema>;
 export type ICreateCheckoutInput = z.infer<typeof createCheckoutSchema>;
 export type ICheckoutOutput = z.infer<typeof checkoutResponseSchema>;
+export type ICreatePublicInscricaoInput = z.infer<typeof createPublicInscricaoSchema>;
+export type ICatalogoCurso = z.infer<typeof catalogoCursoSchema>;
 
 export const listPrecosQuerySchema = z.object({
   cursoId: z.uuid().optional(),

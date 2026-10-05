@@ -5,6 +5,7 @@ import {constructStripeWebhookEvent} from "../../lib/stripe.js";
 import type {
   ICreateCheckoutInput,
   ICreateFaturaInput,
+  ICreatePublicInscricaoInput,
   ICreatePrecoCursoInput,
   IListFaturasQuery,
   IListPrecosQuery,
@@ -15,7 +16,9 @@ import {
   changeFaturaStatus,
   changePrecoCurso,
   createEnrollmentCheckout,
+  createPublicInscricaoCheckout,
   createNewFatura,
+  fetchCatalogoCursos,
   createNewPrecoCurso,
   fetchFaturaById,
   fetchFaturas,
@@ -92,6 +95,23 @@ export const createCheckoutHandler = async (
     return reply.status(200).send(checkout);
   } catch (error) {
     return replyWithFinancialError(error, reply, "Erro ao criar sessão de checkout.");
+  }
+};
+
+export const listCatalogoCursosHandler = async (_request: FastifyRequest, reply: FastifyReply) => {
+  const catalogo = await fetchCatalogoCursos();
+  return reply.status(200).send(catalogo);
+};
+
+export const createPublicInscricaoHandler = async (
+  request: FastifyRequest<{Body: ICreatePublicInscricaoInput}>,
+  reply: FastifyReply,
+) => {
+  try {
+    const checkout = await createPublicInscricaoCheckout(request.body);
+    return reply.status(200).send(checkout);
+  } catch (error) {
+    return replyWithFinancialError(error, reply, "Erro ao criar inscrição e checkout.");
   }
 };
 

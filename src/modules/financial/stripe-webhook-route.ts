@@ -14,7 +14,7 @@ export const stripeWebhookRoutes = async (app: FastifyInstance): Promise<void> =
     {
       schema: {
         tags: ["Financeiro"],
-        summary: "Receber eventos Stripe em payload raw e conciliar matrícula/faturas",
+        summary: "Receber eventos Stripe em payload raw; ativar matrícula só após pagamento (boleto assíncrono)",
         response: {
           200: webhookReceivedResponseSchema,
           400: errorResponseSchema,

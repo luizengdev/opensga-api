@@ -5,6 +5,8 @@ import {Role} from "../../generated/prisma/enums.js";
 import {
   createCheckoutHandler,
   createFaturaHandler,
+  createPublicInscricaoHandler,
+  listCatalogoCursosHandler,
   createPrecoCursoHandler,
   deleteFaturaHandler,
   deletePrecoCursoHandler,
@@ -16,8 +18,10 @@ import {
   updatePrecoCursoHandler,
 } from "./financial-controller.js";
 import {
+  catalogoCursoListResponseSchema,
   checkoutResponseSchema,
   createCheckoutSchema,
+  createPublicInscricaoSchema,
   createFaturaSchema,
   createPrecoCursoSchema,
   deleteResponseSchema,
@@ -36,12 +40,43 @@ import {
 export const checkoutRoutes = async (app: FastifyInstance): Promise<void> => {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
 
+  typedApp.get(
+    "/catalogo",
+    {
+      schema: {
+        tags: ["Financeiro"],
+        summary: "Listar cursos com precificação ativa para inscrição pública",
+        response: {
+          200: catalogoCursoListResponseSchema,
+        },
+      },
+    },
+    listCatalogoCursosHandler,
+  );
+
+  typedApp.post(
+    "/inscricao",
+    {
+      schema: {
+        tags: ["Financeiro"],
+        summary: "Pré-matricular candidato; Checkout Stripe só se houver valor devido agora",
+        body: createPublicInscricaoSchema,
+        response: {
+          200: checkoutResponseSchema,
+          400: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    createPublicInscricaoHandler,
+  );
+
   typedApp.post(
     "/checkout",
     {
       schema: {
         tags: ["Financeiro"],
-        summary: "Criar Checkout Stripe de matrícula com cupom de isenção na primeira parcela",
+        summary: "Checkout Stripe com cartão e boleto quando há valor devido; isenção conclui sem cartão",
         body: createCheckoutSchema,
         response: {
           200: checkoutResponseSchema,

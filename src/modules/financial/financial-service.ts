@@ -4,11 +4,14 @@ import {Prisma} from "../../generated/prisma/client.js";
 import {StatusFatura} from "../../generated/prisma/enums.js";
 import {dayjs} from "../../lib/dayjs.js";
 import {env} from "../../lib/env.js";
+import {EnrollmentError, ensureCandidateForCheckout} from "../enrollment/enrollment-service.js";
 import {
+  createStripeEnrollmentCheckoutSession,
   createStripeTuitionCatalog,
+  retrieveEnrollmentCoupon,
+  retrieveStripeSubscriptionMetadata,
   rotateStripeTuitionPrice,
   setStripeTuitionCatalogActive,
-  stripe,
 } from "../../lib/stripe.js";
 import {
   activateMatriculaByAlunoAndCurso,
@@ -22,6 +25,7 @@ import {
   findPrecoCursoById,
   insertFatura,
   insertPrecoCurso,
+  listCatalogoCursos,
   listFaturas,
   listPrecosCurso,
   updateFaturaStatusById,
@@ -29,8 +33,10 @@ import {
   upsertFaturaFromStripeInvoice,
 } from "./financial-repository.js";
 import type {
+  ICatalogoCurso,
   ICreateCheckoutInput,
   ICreateFaturaInput,
+  ICreatePublicInscricaoInput,
   ICreatePrecoCursoInput,
   IFaturaOutput,
   IListFaturasQuery,
@@ -214,8 +220,8 @@ const resolveStudentContextFromInvoice = async (invoice: Stripe.Invoice): Promis
     return {};
   }
 
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-  return readCheckoutMetadata(subscription.metadata);
+  const metadata = await retrieveStripeSubscriptionMetadata(subscriptionId);
+  return readCheckoutMetadata(metadata);
 };
 
 const syncFaturaFromInvoice = async ({
@@ -253,6 +259,65 @@ const syncFaturaFromInvoice = async ({
   });
 };
 
+const computeAmountDueNowCents = ({
+  coupon,
+  priceReais,
+}: {
+  coupon: {
+    amountOffCents: number | null;
+    percentOff: number | null;
+  } | null;
+  priceReais: number;
+}) => {
+  const priceCents = Math.round(priceReais * 100);
+
+  if (!coupon) {
+    return priceCents;
+  }
+
+  if (coupon.percentOff !== null) {
+    return Math.max(0, priceCents - Math.round((priceCents * coupon.percentOff) / 100));
+  }
+
+  if (coupon.amountOffCents !== null) {
+    return Math.max(0, priceCents - coupon.amountOffCents);
+  }
+
+  return priceCents;
+};
+
+const scheduleNextCycleTuition = async ({
+  alunoId,
+  cursoNome,
+  valor,
+}: {
+  alunoId: string;
+  cursoNome: string;
+  valor: number;
+}) => {
+  if (valor <= 0) {
+    return;
+  }
+
+  const existing = await listFaturas({alunoId, status: StatusFatura.PENDENTE});
+  const hasLocalTuition = existing.some((fatura) => fatura.stripeInvoiceId === null);
+
+  if (hasLocalTuition) {
+    return;
+  }
+
+  await insertFatura({
+    alunoId,
+    descricao: `Mensalidade — ${cursoNome}`,
+    valor,
+    dataVencimento: dayjs().add(1, "month").format("YYYY-MM-DD"),
+  });
+};
+
+const shouldActivateEnrollmentFromSession = (session: Stripe.Checkout.Session) => {
+  return session.payment_status === "paid";
+};
+
 export const createEnrollmentCheckout = async (input: ICreateCheckoutInput) => {
   const aluno = await findAlunoById(input.studentId);
 
@@ -272,28 +337,35 @@ export const createEnrollmentCheckout = async (input: ICreateCheckoutInput) => {
     throw new FinancialError("Curso sem precificação ativa cadastrada.", 400);
   }
 
-  const stripePriceId = preco.stripePriceId;
+  const monthlyValue = toReais(preco.valor);
+  const coupon = await retrieveEnrollmentCoupon(env.STRIPE_INSCRICAO_COUPON_ID);
+  const amountDueNowCents = computeAmountDueNowCents({
+    coupon,
+    priceReais: monthlyValue,
+  });
 
-  const session = await stripe.checkout.sessions.create({
-    mode: "subscription",
-    customer_email: input.email,
-    client_reference_id: input.studentId,
-    line_items: [{price: stripePriceId, quantity: 1}],
-    discounts: [{coupon: env.STRIPE_INSCRICAO_COUPON_ID}],
-    payment_method_collection: "always",
-    locale: "pt-BR",
-    success_url: `${env.FRONTEND_URL}/inscricao?checkout=success`,
-    cancel_url: `${env.FRONTEND_URL}/inscricao?checkout=cancel`,
-    metadata: {
-      studentId: input.studentId,
-      cursoId: curso.id,
-    },
-    subscription_data: {
-      metadata: {
-        studentId: input.studentId,
-        cursoId: curso.id,
-      },
-    },
+  if (amountDueNowCents <= 0) {
+    await scheduleNextCycleTuition({
+      alunoId: aluno.id,
+      cursoNome: curso.nome,
+      valor: monthlyValue,
+    });
+
+    return {
+      url: null,
+      sessionId: null,
+      requiresCheckout: false,
+      status: "PRE_MATRICULADO" as const,
+      acesso: null,
+    };
+  }
+
+  const session = await createStripeEnrollmentCheckoutSession({
+    couponId: coupon?.id ?? null,
+    cursoId: curso.id,
+    email: input.email,
+    stripePriceId: preco.stripePriceId,
+    studentId: input.studentId,
   });
 
   if (!session.url) {
@@ -302,8 +374,80 @@ export const createEnrollmentCheckout = async (input: ICreateCheckoutInput) => {
 
   return {
     url: session.url,
-    sessionId: session.id,
+    sessionId: session.sessionId,
+    requiresCheckout: true,
+    status: "AGUARDANDO_PAGAMENTO" as const,
+    acesso: null,
   };
+};
+
+const inferTipoGraduacao = (nome: string, duracaoSemestres: number): ICatalogoCurso["tipoGraduacao"] => {
+  const normalized = nome.toLowerCase();
+
+  if (normalized.includes("pedagogia") || normalized.includes("licenciatura")) {
+    return "LICENCIATURA";
+  }
+
+  if (
+    duracaoSemestres <= 6 ||
+    normalized.includes("análise e desenvolvimento") ||
+    normalized.includes("gestão de ti") ||
+    normalized.includes("marketing")
+  ) {
+    return "TECNOLOGO";
+  }
+
+  return "BACHARELADO";
+};
+
+export const fetchCatalogoCursos = async (): Promise<ICatalogoCurso[]> => {
+  const ofertas = await listCatalogoCursos();
+
+  return ofertas.map((oferta) => ({
+    cursoId: oferta.curso.id,
+    nome: oferta.curso.nome,
+    modalidade: oferta.curso.modalidade,
+    tipoGraduacao: inferTipoGraduacao(oferta.curso.nome, oferta.curso.duracaoSemestres),
+    duracaoSemestres: oferta.curso.duracaoSemestres,
+    campus: oferta.curso.campus,
+    valor: toReais(oferta.valor),
+    moeda: oferta.moeda,
+    intervalo: oferta.intervalo,
+  }));
+};
+
+export const createPublicInscricaoCheckout = async (input: ICreatePublicInscricaoInput) => {
+  try {
+    const candidate = await ensureCandidateForCheckout({
+      nome: input.nome,
+      email: input.email,
+      cpf: input.cpf,
+      telefone: input.telefone,
+      dataNascimento: input.dataNascimento,
+      cursoId: input.cursoModalidadeId,
+    });
+
+    const checkout = await createEnrollmentCheckout({
+      studentId: candidate.alunoId,
+      email: input.email,
+      cursoModalidadeId: input.cursoModalidadeId,
+    });
+
+    return {
+      ...checkout,
+      acesso: {
+        email: input.email.trim().toLowerCase(),
+        ra: candidate.ra,
+        senhaProvisoria: candidate.senhaProvisoria,
+      },
+    };
+  } catch (error) {
+    if (error instanceof EnrollmentError) {
+      throw new FinancialError(error.message, error.statusCode);
+    }
+
+    throw error;
+  }
 };
 
 export const markStudentAsEnrolled = async (metadata: Stripe.Metadata | null) => {
@@ -323,7 +467,20 @@ export const processStripeWebhookEvent = async (event: Stripe.Event) => {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object;
+
+      if (!shouldActivateEnrollmentFromSession(session)) {
+        return;
+      }
+
       await markStudentAsEnrolled(session.metadata);
+      return;
+    }
+    case "checkout.session.async_payment_succeeded": {
+      const session = event.data.object;
+      await markStudentAsEnrolled(session.metadata);
+      return;
+    }
+    case "checkout.session.async_payment_failed": {
       return;
     }
     case "invoice.payment_succeeded": {

@@ -14,7 +14,7 @@ Este documento define a arquitetura, padrões de engenharia, stack tecnológica 
 - **Modelo**: Repositórios (Backend API REST).
 - **Padrão Backend**: Arquitetura Hexagonal (Ports & Adapters) orientada a módulos de domínio.
 - **Perfis de Acesso (RBAC)**: `ADMIN`, `PROFESSOR`, `ALUNO`, `RESPONSAVEL`.
-- **Produto atual**: sistema interno (login unificado + dashboards ADMIN e PROFESSOR) e checkout público de matrícula (`POST /api/checkout`). Portal aluno/responsável self-service fica para depois — não abrir CRUD desses papéis agora.
+- **Produto atual**: sistema interno (login unificado + dashboards ADMIN e PROFESSOR) e inscrição pública (`GET /api/catalogo`, `POST /api/inscricao` — Checkout Stripe só se o valor devido agora for > 0). Portal aluno/responsável self-service fica para depois — não abrir CRUD desses papéis agora.
 - **Testes / QA**: especificação em [docs/qa-arquitetura-testes.md](docs/qa-arquitetura-testes.md) (regras, CA, BDD `QA-*`). Fonte única para Postman **e** Playwright (`test('QA-…')`). Ao mudar regra de negócio, atualize esse arquivo antes da collection ou do E2E.
 
 ---
@@ -91,7 +91,9 @@ Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 - `/diario` — enturmação `ADMIN`; GET lista/id `ADMIN`+`PROFESSOR` (professor filtrado pelo JWT); `PATCH /diario/avaliar` `ADMIN`+`PROFESSOR` titular
 - `/financeiro/precos` — precificação por curso/modalidade (`ADMIN`); sync Stripe Product/Price
 - `/financeiro/faturas` — contas a receber (`ADMIN`)
-- `POST /api/checkout` e `POST /api/v1/checkout` — Checkout Stripe de matrícula (público)
+- `GET /api/catalogo` e `GET /api/v1/catalogo` — catálogo público de cursos com preço ativo
+- `POST /api/inscricao` e `POST /api/v1/inscricao` — pré-matrícula pública; Checkout Stripe só se valor devido agora > 0 (cartão e boleto)
+- `POST /api/checkout` e `POST /api/v1/checkout` — Checkout de matrícula (público, aluno já existente); isenção conclui sem sessão Stripe
 - `POST /webhooks/stripe` — webhook Stripe (raw body, público, fora de `/api/v1`)
 - `/comunicados` e `/ouvidoria/reclamacoes` — mural e ouvidoria (`ADMIN`)
 - `/dashboard/admin` (`ADMIN`) e `/dashboard/professor` (`PROFESSOR`) — resumos do período (`anoLetivo` / `semestreLetivo` opcionais)
@@ -201,8 +203,10 @@ Definir `onDelete` explicitamente no Prisma. Antes de `delete`, o service conta 
 - **1 preço por curso**: `PrecoCurso.cursoId` é único. `Curso` já tem `modalidade` (`PRESENCIAL` | `SEMIPRESENCIAL` | `EAD`); Engenharia Presencial e Engenharia EAD são dois `Curso`, cada um com sua linha.
 - **Sync Stripe**: criar/atualizar Product e Price **só** via `src/lib/stripe.ts`. Nunca instanciar o SDK Stripe em controller, repository ou outro `lib/`.
 - **Price imutável**: `unit_amount` não muda. Alterar `valor` arquiva o Price antigo (`active: false`) e cria um novo; atualiza `stripePriceId`. DELETE arquiva Product/Price no Stripe e remove a linha local.
-- **Checkout**: `POST /api/checkout` (e `/api/v1/checkout`) público; body `studentId`, `email`, `cursoModalidadeId` (id do `Curso`). Exige `PrecoCurso` **ativo**. Sessão `mode: "subscription"`, cupom `STRIPE_INSCRICAO_COUPON_ID` (`isencao-inscricao`, 100%, `duration: once`), `payment_method_collection: "always"`, metadata `studentId` + `cursoId` na sessão e em `subscription_data`.
-- **Webhook**: `POST /webhooks/stripe` fora de `/api/v1`, público, body raw (`Buffer`). Validar com `stripe.webhooks.constructEvent` e `env.STRIPE_WEBHOOK_SECRET`. Eventos: `checkout.session.completed` → matrícula `ATIVO`; `invoice.payment_succeeded` → fatura `PAGA`; `invoice.payment_failed` → fatura `ATRASADA`. Assinatura inválida/ausente → 400; falha de processamento após evento válido → 500 (retry Stripe).
+- **Catálogo público**: `GET /api/catalogo` lista cursos com `PrecoCurso` ativo (sem IDs Stripe).
+- **Inscrição pública**: `POST /api/inscricao` cria aluno + matrícula `PRE_MATRICULADO` (ou reutiliza aluno existente pelo CPF ou pelo e-mail). Se o valor devido agora for R$ 0 (cupom `STRIPE_INSCRICAO_COUPON_ID` 100% `once`), não abre Checkout: devolve `requiresCheckout=false` e agenda fatura `PENDENTE` no ciclo seguinte. Se houver cobrança, devolve a URL do Checkout. CPF e e-mail de pessoas diferentes → 400.
+- **Checkout**: `POST /api/checkout` (e `/api/v1/checkout`) público; body `studentId`, `email`, `cursoModalidadeId` (id do `Curso`). Exige `PrecoCurso` **ativo**. Checkout `mode: "subscription"` só se valor devido agora > 0; então oferece `card` e `boleto` (voucher 3 dias, `billing_address_collection` e `tax_id_collection`). Não usar `payment_method_collection: if_required` para esconder cartão na inscrição R$ 0. Cupom `STRIPE_INSCRICAO_COUPON_ID` entra no cálculo do devido agora. Metadata: `studentId` + `cursoId` na sessão e em `subscription_data`.
+- **Webhook**: `POST /webhooks/stripe` fora de `/api/v1`, público, body raw (`Buffer`). Validar com `stripe.webhooks.constructEvent` e `env.STRIPE_WEBHOOK_SECRET`. Eventos: `checkout.session.completed` com `payment_status=paid` → matrícula `ATIVO` (cartão); `completed` + `unpaid` (boleto gerado) **não** efetiva; `checkout.session.async_payment_succeeded` → `ATIVO`; `checkout.session.async_payment_failed` → permanece `PRE_MATRICULADO`; `invoice.payment_succeeded` → fatura `PAGA`; `invoice.payment_failed` → fatura `ATRASADA`. Assinatura inválida/ausente → 400; falha de processamento após evento válido → 500 (retry Stripe).
 - **Env**: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_INSCRICAO_COUPON_ID`. Não commitar `.env`.
 
 ---

@@ -25,6 +25,7 @@ export interface ICreateStudentTxData {
   semestreIngresso: string;
   responsavelExistenteId?: string;
   novoResponsavel?: INovoResponsavelTx;
+  status?: StatusMatricula;
 }
 
 const generateAcademicRecord = () => {
@@ -47,17 +48,37 @@ const isKnownRequestError = (error: unknown): error is Prisma.PrismaClientKnownR
   return error instanceof Prisma.PrismaClientKnownRequestError;
 };
 
+const userIdentitySelect = {
+  id: true,
+  role: true,
+  cpf: true,
+  email: true,
+  aluno: {select: {id: true, ra: true}},
+  responsavel: {select: {id: true}},
+} as const;
+
 export const findUserByCpfOrEmail = async ({cpf, email}: {cpf: string; email: string}) => {
   return prisma.user.findFirst({
     where: {
       OR: [{cpf}, {email}],
     },
-    select: {
-      id: true,
-      role: true,
-      responsavel: {select: {id: true}},
-    },
+    select: userIdentitySelect,
   });
+};
+
+export const findCandidateByCpfAndEmail = async ({cpf, email}: {cpf: string; email: string}) => {
+  const [userByEmail, userByCpf] = await Promise.all([
+    prisma.user.findFirst({
+      where: {email: {equals: email, mode: "insensitive"}},
+      select: userIdentitySelect,
+    }),
+    prisma.user.findFirst({
+      where: {cpf},
+      select: userIdentitySelect,
+    }),
+  ]);
+
+  return {userByEmail, userByCpf};
 };
 
 export const findActiveMatrizById = async ({
@@ -72,6 +93,51 @@ export const findActiveMatrizById = async ({
       id: matrizCurricularId,
       cursoId,
       ativo: true,
+    },
+    select: {id: true},
+  });
+};
+
+export const findActiveMatrizByCursoId = async (cursoId: string) => {
+  return prisma.matrizCurricular.findFirst({
+    where: {cursoId, ativo: true},
+    orderBy: {anoVigencia: "desc"},
+    select: {id: true},
+  });
+};
+
+export const findMatriculaByAlunoAndCurso = async ({
+  alunoId,
+  cursoId,
+}: {
+  alunoId: string;
+  cursoId: string;
+}) => {
+  return prisma.matricula.findFirst({
+    where: {alunoId, cursoId},
+    select: {id: true, status: true},
+  });
+};
+
+export const createPreMatricula = async ({
+  alunoId,
+  cursoId,
+  matrizCurricularId,
+  semestreIngresso,
+}: {
+  alunoId: string;
+  cursoId: string;
+  matrizCurricularId: string;
+  semestreIngresso: string;
+}) => {
+  return prisma.matricula.create({
+    data: {
+      alunoId,
+      cursoId,
+      matrizCurricularId,
+      semestreIngresso,
+      status: StatusMatricula.PRE_MATRICULADO,
+      periodoAtual: 1,
     },
     select: {id: true},
   });
@@ -128,7 +194,7 @@ export const createStudentWithEnrollment = async (input: ICreateStudentTxData) =
         cursoId: input.cursoId,
         matrizCurricularId: input.matrizCurricularId,
         semestreIngresso: input.semestreIngresso,
-        status: StatusMatricula.ATIVO,
+        status: input.status ?? StatusMatricula.ATIVO,
         periodoAtual: 1,
       },
       select: {
@@ -138,6 +204,7 @@ export const createStudentWithEnrollment = async (input: ICreateStudentTxData) =
     });
 
     return {
+      alunoId: aluno.id,
       ra: aluno.ra,
       matriculaId: matricula.id,
       matrizNome: matricula.matrizCurricular.nome,
