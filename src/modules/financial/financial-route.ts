@@ -3,22 +3,56 @@ import {ZodTypeProvider} from "fastify-type-provider-zod";
 
 import {Role} from "../../generated/prisma/enums.js";
 import {
+  createCheckoutHandler,
   createFaturaHandler,
+  createPrecoCursoHandler,
   deleteFaturaHandler,
+  deletePrecoCursoHandler,
   getFaturaHandler,
+  getPrecoCursoHandler,
   listFaturasHandler,
+  listPrecosCursoHandler,
   updateFaturaStatusHandler,
+  updatePrecoCursoHandler,
 } from "./financial-controller.js";
 import {
+  checkoutResponseSchema,
+  createCheckoutSchema,
   createFaturaSchema,
+  createPrecoCursoSchema,
   deleteResponseSchema,
   errorResponseSchema,
   faturaListResponseSchema,
   faturaResponseSchema,
   idParamsSchema,
   listFaturasQuerySchema,
+  listPrecosQuerySchema,
+  precoCursoListResponseSchema,
+  precoCursoResponseSchema,
   updateFaturaStatusSchema,
+  updatePrecoCursoSchema,
 } from "./financial-schemas.js";
+
+export const checkoutRoutes = async (app: FastifyInstance): Promise<void> => {
+  const typedApp = app.withTypeProvider<ZodTypeProvider>();
+
+  typedApp.post(
+    "/checkout",
+    {
+      schema: {
+        tags: ["Financeiro"],
+        summary: "Criar Checkout Stripe de matrícula com cupom de isenção na primeira parcela",
+        body: createCheckoutSchema,
+        response: {
+          200: checkoutResponseSchema,
+          400: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    createCheckoutHandler,
+  );
+};
 
 export const financialRoutes = async (app: FastifyInstance): Promise<void> => {
   const typedApp = app.withTypeProvider<ZodTypeProvider>();
@@ -26,6 +60,111 @@ export const financialRoutes = async (app: FastifyInstance): Promise<void> => {
     onRequest: [app.authenticate],
     preHandler: [app.authorize([Role.ADMIN])],
   };
+
+  await checkoutRoutes(app);
+
+  typedApp.get(
+    "/financeiro/precos",
+    {
+      ...acessoAdmin,
+      schema: {
+        tags: ["Financeiro"],
+        summary: "Listar precificação por curso/modalidade",
+        security: [{bearerAuth: []}],
+        querystring: listPrecosQuerySchema,
+        response: {
+          200: precoCursoListResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+        },
+      },
+    },
+    listPrecosCursoHandler,
+  );
+
+  typedApp.post(
+    "/financeiro/precos",
+    {
+      ...acessoAdmin,
+      schema: {
+        tags: ["Financeiro"],
+        summary: "Cadastrar mensalidade de um curso e sincronizar Product/Price no Stripe",
+        security: [{bearerAuth: []}],
+        body: createPrecoCursoSchema,
+        response: {
+          201: precoCursoResponseSchema,
+          400: errorResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+          409: errorResponseSchema,
+        },
+      },
+    },
+    createPrecoCursoHandler,
+  );
+
+  typedApp.get(
+    "/financeiro/precos/:id",
+    {
+      ...acessoAdmin,
+      schema: {
+        tags: ["Financeiro"],
+        summary: "Buscar precificação por id",
+        security: [{bearerAuth: []}],
+        params: idParamsSchema,
+        response: {
+          200: precoCursoResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    getPrecoCursoHandler,
+  );
+
+  typedApp.patch(
+    "/financeiro/precos/:id",
+    {
+      ...acessoAdmin,
+      schema: {
+        tags: ["Financeiro"],
+        summary: "Atualizar valor ou status da precificação (novo Price no Stripe se o valor mudar)",
+        security: [{bearerAuth: []}],
+        params: idParamsSchema,
+        body: updatePrecoCursoSchema,
+        response: {
+          200: precoCursoResponseSchema,
+          400: errorResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    updatePrecoCursoHandler,
+  );
+
+  typedApp.delete(
+    "/financeiro/precos/:id",
+    {
+      ...acessoAdmin,
+      schema: {
+        tags: ["Financeiro"],
+        summary: "Arquivar catálogo no Stripe e excluir precificação",
+        security: [{bearerAuth: []}],
+        params: idParamsSchema,
+        response: {
+          200: deleteResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+        },
+      },
+    },
+    deletePrecoCursoHandler,
+  );
 
   typedApp.get(
     "/financeiro/faturas",

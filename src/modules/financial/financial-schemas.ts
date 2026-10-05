@@ -1,6 +1,6 @@
 import {z} from "zod";
 
-import {StatusFatura} from "../../generated/prisma/enums.js";
+import {IntervaloCobranca, ModalidadeCurso, StatusFatura} from "../../generated/prisma/enums.js";
 
 export const idParamsSchema = z.object({
   id: z.uuid(),
@@ -55,8 +55,81 @@ export const faturaResponseSchema = z.object({
 });
 
 export const faturaListResponseSchema = z.array(faturaResponseSchema);
+export const createCheckoutSchema = z.object({
+  studentId: z.uuid(),
+  email: z.email(),
+  cursoModalidadeId: z.uuid(),
+});
+
+export const checkoutResponseSchema = z.object({
+  url: z.url(),
+  sessionId: z.string().min(1),
+});
+
+export const webhookReceivedResponseSchema = z.object({
+  received: z.literal(true),
+});
 
 export type IListFaturasQuery = z.infer<typeof listFaturasQuerySchema>;
 export type ICreateFaturaInput = z.infer<typeof createFaturaSchema>;
 export type IUpdateFaturaStatusInput = z.infer<typeof updateFaturaStatusSchema>;
 export type IFaturaOutput = z.infer<typeof faturaResponseSchema>;
+export type ICreateCheckoutInput = z.infer<typeof createCheckoutSchema>;
+export type ICheckoutOutput = z.infer<typeof checkoutResponseSchema>;
+
+export const listPrecosQuerySchema = z.object({
+  cursoId: z.uuid().optional(),
+  ativo: z
+    .union([z.boolean(), z.enum(["true", "false"])])
+    .optional()
+    .transform((value) => {
+      if (value === undefined) {
+        return undefined;
+      }
+
+      if (typeof value === "boolean") {
+        return value;
+      }
+
+      return value === "true";
+    }),
+});
+
+export const createPrecoCursoSchema = z.object({
+  cursoId: z.uuid(),
+  valor: z.number().positive(),
+});
+
+export const updatePrecoCursoSchema = z
+  .object({
+    valor: z.number().positive().optional(),
+    ativo: z.boolean().optional(),
+  })
+  .refine((data) => data.valor !== undefined || data.ativo !== undefined, {
+    message: "Informe valor e/ou ativo.",
+  });
+
+export const precoCursoResponseSchema = z.object({
+  id: z.uuid(),
+  cursoId: z.uuid(),
+  valor: z.number(),
+  moeda: z.string(),
+  intervalo: z.enum(IntervaloCobranca),
+  stripeProductId: z.string(),
+  stripePriceId: z.string(),
+  ativo: z.boolean(),
+  criadoEm: z.iso.datetime(),
+  atualizadoEm: z.iso.datetime(),
+  curso: z.object({
+    id: z.uuid(),
+    nome: z.string(),
+    modalidade: z.enum(ModalidadeCurso),
+  }),
+});
+
+export const precoCursoListResponseSchema = z.array(precoCursoResponseSchema);
+
+export type IListPrecosQuery = z.infer<typeof listPrecosQuerySchema>;
+export type ICreatePrecoCursoInput = z.infer<typeof createPrecoCursoSchema>;
+export type IUpdatePrecoCursoInput = z.infer<typeof updatePrecoCursoSchema>;
+export type IPrecoCursoOutput = z.infer<typeof precoCursoResponseSchema>;

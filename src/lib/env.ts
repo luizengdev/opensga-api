@@ -14,6 +14,7 @@ const envSchema = z.object({
 
   STRIPE_SECRET_KEY: z.string().catch(""),
   STRIPE_WEBHOOK_SECRET: z.string().catch(""),
+  STRIPE_INSCRICAO_COUPON_ID: z.string().default("isencao-inscricao"),
 
   CLOUDINARY_CLOUD_NAME: z.string().catch(""),
   CLOUDINARY_API_KEY: z.string().catch(""),
@@ -25,7 +26,7 @@ const envSchema = z.object({
   SMTP_PASS: z.string().catch(""),
   SMTP_FROM: z.string().catch(""),
 
-  FRONTEND_URL: z.string().default("http://localhost:5173"),
+  FRONTEND_URL: z.string().default("http://localhost:3000"),
 });
 
 export const env = envSchema.parse(process.env);

@@ -37,6 +37,10 @@ enum StatusFatura {
   CANCELADA
 }
 
+enum IntervaloCobranca {
+  MONTH
+}
+
 enum TipoReclamacao {
   FINANCEIRO
   ACADEMICO
@@ -163,6 +167,7 @@ model Curso {
   campus     Campus             @relation(fields: [campusId], references: [id], onDelete: Cascade)
   matrizes   MatrizCurricular[]
   matriculas Matricula[]
+  preco      PrecoCurso?
 
   @@map("cursos")
 }
@@ -295,6 +300,23 @@ model Fatura {
   aluno Aluno @relation(fields: [alunoId], references: [id], onDelete: Cascade)
 
   @@map("faturas")
+}
+
+model PrecoCurso {
+  id              String            @id @default(uuid()) @db.Uuid
+  cursoId         String            @unique @db.Uuid
+  valor           Decimal           @db.Decimal(10, 2)
+  moeda           String            @default("brl") @db.VarChar(3)
+  intervalo       IntervaloCobranca @default(MONTH)
+  stripeProductId String            @db.VarChar(100)
+  stripePriceId   String            @db.VarChar(100)
+  ativo           Boolean           @default(true)
+  criadoEm        DateTime          @default(now()) @db.Timestamptz()
+  atualizadoEm    DateTime          @updatedAt @db.Timestamptz()
+
+  curso Curso @relation(fields: [cursoId], references: [id], onDelete: Cascade)
+
+  @@map("precos_curso")
 }
 
 model Comunicado {

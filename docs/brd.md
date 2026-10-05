@@ -146,7 +146,7 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 | Matrícula | Efetivação, consulta por status, alteração de status e exclusão do vínculo (`/matriculas`). O aluno não é apagado junto com a matrícula. |
 | Diário | Enturmação ADMIN; listagem/consulta ADMIN+PROFESSOR (filtro JWT); desenturmação ADMIN; lançamento de notas/faltas pelo titular (`PATCH /diario/avaliar`). |
 | Dashboards | `GET /dashboard/admin` e `GET /dashboard/professor` com KPIs do período letivo. |
-| Financeiro | Emissão, consulta, atualização de status e exclusão de faturas (`/financeiro/faturas`). Conciliação automática via webhook Stripe ainda não está exposta. |
+| Financeiro | Precificação por curso (`/financeiro/precos`, ADMIN): o valor é cadastrado no OpenSGA e sincronizado como Product/Price no Stripe. Emissão de faturas (`/financeiro/faturas`). Checkout de matrícula (`POST /api/checkout` e `POST /api/v1/checkout`) em modo `subscription` com cupom de 100% na primeira parcela. Webhook `POST /webhooks/stripe` concilia `checkout.session.completed`, `invoice.payment_succeeded` e `invoice.payment_failed`. |
 | Comunicação | CRUD de comunicados por público-alvo (`/comunicados`) e fluxo de ouvidoria: abrir, responder, fechar e excluir (`/ouvidoria/reclamacoes`). |
 
 **Regras de exclusão (integridade referencial)**
