@@ -53,7 +53,7 @@ const userIdentitySelect = {
   role: true,
   cpf: true,
   email: true,
-  aluno: {select: {id: true}},
+  aluno: {select: {id: true, ra: true}},
   responsavel: {select: {id: true}},
 } as const;
 

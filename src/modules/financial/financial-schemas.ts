@@ -61,9 +61,20 @@ export const createCheckoutSchema = z.object({
   cursoModalidadeId: z.uuid(),
 });
 
+export const checkoutStatusSchema = z.enum(["PRE_MATRICULADO", "AGUARDANDO_PAGAMENTO"]);
+
 export const checkoutResponseSchema = z.object({
-  url: z.url(),
-  sessionId: z.string().min(1),
+  url: z.url().nullable(),
+  sessionId: z.string().min(1).nullable(),
+  requiresCheckout: z.boolean(),
+  status: checkoutStatusSchema,
+  acesso: z
+    .object({
+      email: z.email(),
+      ra: z.string().min(1),
+      senhaProvisoria: z.string().min(1).nullable(),
+    })
+    .nullable(),
 });
 
 export const createPublicInscricaoSchema = z.object({

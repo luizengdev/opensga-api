@@ -104,7 +104,7 @@ export const findPrecoCursoByCursoId = async (cursoId: string) => {
 export const findPrecoCursoAtivoByCursoId = async (cursoId: string) => {
   return prisma.precoCurso.findFirst({
     where: {cursoId, ativo: true},
-    select: {id: true, stripePriceId: true},
+    select: {id: true, stripePriceId: true, valor: true},
   });
 };
 

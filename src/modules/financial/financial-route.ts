@@ -59,7 +59,7 @@ export const checkoutRoutes = async (app: FastifyInstance): Promise<void> => {
     {
       schema: {
         tags: ["Financeiro"],
-        summary: "Pré-matricular candidato e criar Checkout Stripe de matrícula",
+        summary: "Pré-matricular candidato; Checkout Stripe só se houver valor devido agora",
         body: createPublicInscricaoSchema,
         response: {
           200: checkoutResponseSchema,
@@ -76,7 +76,7 @@ export const checkoutRoutes = async (app: FastifyInstance): Promise<void> => {
     {
       schema: {
         tags: ["Financeiro"],
-        summary: "Criar Checkout Stripe de matrícula com cupom de isenção na primeira parcela",
+        summary: "Checkout Stripe com cartão e boleto quando há valor devido; isenção conclui sem cartão",
         body: createCheckoutSchema,
         response: {
           200: checkoutResponseSchema,

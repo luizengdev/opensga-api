@@ -81,3 +81,70 @@ export const setStripeTuitionCatalogActive = async ({
   await stripe.prices.update(stripePriceId, {active: ativo});
   await stripe.products.update(stripeProductId, {active: ativo});
 };
+
+export const retrieveEnrollmentCoupon = async (couponId: string) => {
+  try {
+    const coupon = await stripe.coupons.retrieve(couponId);
+
+    if (!coupon.valid) {
+      return null;
+    }
+
+    return {
+      id: coupon.id,
+      percentOff: coupon.percent_off ?? null,
+      amountOffCents: coupon.amount_off ?? null,
+    };
+  } catch {
+    return null;
+  }
+};
+
+export const createStripeEnrollmentCheckoutSession = async ({
+  couponId,
+  cursoId,
+  email,
+  stripePriceId,
+  studentId,
+}: {
+  couponId: string | null;
+  cursoId: string;
+  email: string;
+  stripePriceId: string;
+  studentId: string;
+}) => {
+  const metadata = {studentId, cursoId};
+
+  const session = await stripe.checkout.sessions.create({
+    mode: "subscription",
+    customer_email: email,
+    client_reference_id: studentId,
+    line_items: [{price: stripePriceId, quantity: 1}],
+    ...(couponId ? {discounts: [{coupon: couponId}]} : {}),
+    allowed_payment_method_types: ["card", "boleto"],
+    payment_method_options: {
+      boleto: {
+        expires_after_days: 3,
+      },
+    },
+    billing_address_collection: "required",
+    tax_id_collection: {enabled: true},
+    locale: "pt-BR",
+    success_url: `${env.FRONTEND_URL}/inscricao?checkout=success`,
+    cancel_url: `${env.FRONTEND_URL}/inscricao?checkout=cancel`,
+    metadata,
+    subscription_data: {
+      metadata,
+    },
+  });
+
+  return {
+    url: session.url,
+    sessionId: session.id,
+  };
+};
+
+export const retrieveStripeSubscriptionMetadata = async (subscriptionId: string) => {
+  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  return subscription.metadata;
+};

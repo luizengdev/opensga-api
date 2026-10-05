@@ -595,30 +595,47 @@ Cenário: Baixa de fatura
 
 `GET /api/catalogo` e `GET /api/v1/catalogo` — públicos. Lista cursos com `PrecoCurso` **ativo** (sem IDs Stripe): `cursoId`, `nome`, `modalidade`, `duracaoSemestres`, `campus`, `valor`, `moeda`, `intervalo`.
 
-`POST /api/inscricao` e `POST /api/v1/inscricao` — públicos. Corpo: `nome`, `email`, `cpf` (14 chars), `telefone?`, `dataNascimento` (`YYYY-MM-DD`), `cursoModalidadeId`. Cria aluno + matrícula `PRE_MATRICULADO` (ou reutiliza aluno existente identificado pelo CPF ou pelo e-mail) e devolve a sessão Stripe. Se CPF e e-mail apontarem para pessoas diferentes, 400.
+`POST /api/inscricao` e `POST /api/v1/inscricao` — públicos. Corpo: `nome`, `email`, `cpf` (14 chars), `telefone?`, `dataNascimento` (`YYYY-MM-DD`), `cursoModalidadeId`. Cria aluno + matrícula `PRE_MATRICULADO` (ou reutiliza aluno existente identificado pelo CPF ou pelo e-mail). Se o valor devido agora for R$ 0 (cupom `isencao-inscricao` 100% `once`), **não** cria sessão Stripe: `requiresCheckout=false`, `url=null`, `status=PRE_MATRICULADO` e agenda fatura `PENDENTE` no ciclo seguinte. Se houver valor agora, devolve Checkout com cartão e boleto (`requiresCheckout=true`, `status=AGUARDANDO_PAGAMENTO`). Se CPF e e-mail apontarem para pessoas diferentes, 400.
 
-`POST /api/checkout` e `POST /api/v1/checkout` — públicos. Corpo: `studentId`, `email`, `cursoModalidadeId` (id do `Curso`). A API usa o `stripePriceId` da precificação **ativa** em `precos_curso` e cria `checkout.sessions` em `mode=subscription` com o cupom `isencao-inscricao` (100% `once`). Metadata: `studentId`, `cursoId`.
+`POST /api/checkout` e `POST /api/v1/checkout` — públicos. Corpo: `studentId`, `email`, `cursoModalidadeId` (id do `Curso`). A API usa o `stripePriceId` da precificação **ativa** em `precos_curso` e calcula o valor devido agora com o cupom. Checkout em `mode=subscription` só ocorre se o devido for maior que zero; nesse caso oferece `card` e `boleto` (voucher 3 dias, endereço e CPF no Checkout). Metadata: `studentId`, `cursoId`.
 
-`POST /webhooks/stripe` — público, body raw (`Buffer`). Valida `Stripe-Signature` com `STRIPE_WEBHOOK_SECRET`.
+`POST /webhooks/stripe` — público, body raw (`Buffer`). Valida `Stripe-Signature` com `STRIPE_WEBHOOK_SECRET`. Cartão: `checkout.session.completed` com `payment_status=paid` efetiva a matrícula. Boleto: `completed` com `unpaid` só gera o voucher; `checkout.session.async_payment_succeeded` efetiva; `async_payment_failed` (vencido) mantém `PRE_MATRICULADO`.
 
 **CA-FIN-CAT-01.** GET `/api/catalogo` → 200 e somente cursos com preço ativo.
-**CA-FIN-INS-01.** POST `/api/inscricao` com dados válidos e curso precificado → 200 e `url` do Stripe; matrícula `PRE_MATRICULADO`.
+**CA-FIN-INS-01.** POST `/api/inscricao` com dados válidos, curso precificado e 1ª parcela isenta → 200, `url` nula, `requiresCheckout=false`, `status=PRE_MATRICULADO`, `acesso.ra` e `acesso.senhaProvisoria` (nula se o aluno já existia); matrícula `PRE_MATRICULADO`; fatura `PENDENTE` no ciclo seguinte.
 **CA-FIN-INS-02.** POST `/api/inscricao` com CPF/e-mail de não-aluno → 400.
-**CA-FIN-06.** POST `/api/checkout` com aluno e curso válidos → 200 e `url` do Stripe.  
+**CA-FIN-INS-03.** POST `/api/inscricao` com valor devido agora > 0 → 200, `requiresCheckout=true` e `url` do Stripe.
+**CA-FIN-06.** POST `/api/checkout` com aluno, curso válidos e 1ª parcela isenta → 200, `url` nula e `requiresCheckout=false`.  
 **CA-FIN-07.** `studentId` inexistente → 404.  
 **CA-FIN-08.** `cursoModalidadeId` inexistente → 404.  
 **CA-FIN-09.** Webhook sem `Stripe-Signature` → 400.  
-**CA-FIN-10.** `checkout.session.completed` com `metadata.studentId` atualiza a matrícula para `ATIVO`.  
+**CA-FIN-10.** `checkout.session.completed` com `payment_status=paid` e `metadata.studentId` atualiza a matrícula para `ATIVO`.  
+**CA-FIN-10b.** `checkout.session.completed` com `payment_status=unpaid` (boleto gerado) **não** efetiva a matrícula.  
 **CA-FIN-11.** `invoice.payment_succeeded` upsert da fatura `PAGA` por `stripeInvoiceId`.  
 **CA-FIN-12.** `invoice.payment_failed` upsert da fatura `ATRASADA`.
+**CA-FIN-13.** `checkout.session.async_payment_succeeded` efetiva a matrícula (`ATIVO`).
+**CA-FIN-14.** `checkout.session.async_payment_failed` mantém `PRE_MATRICULADO`.
 
 ```gherkin
 @QA-FIN-06
-Cenário: Checkout com isenção da primeira parcela
+Cenário: Inscrição isenta não abre Checkout Stripe
   Dado um aluno existente e um curso com precificação ativa
+  E o cupom de inscrição zera a primeira parcela
   Quando envio POST /api/checkout com studentId, email e cursoModalidadeId
   Então a resposta é 200
-  E url começa com https://checkout.stripe.com
+  E requiresCheckout é false
+  E url é null
+  E status é PRE_MATRICULADO
+```
+
+```gherkin
+@QA-FIN-10
+Cenário: Boleto só efetiva a matrícula depois do pagamento
+  Dado um checkout com boleto gerado
+  Quando chega checkout.session.completed com payment_status unpaid
+  Então a matrícula permanece PRE_MATRICULADO
+  Quando chega checkout.session.async_payment_succeeded
+  Então a matrícula passa a ATIVO
 ```
 
 ---

@@ -158,7 +158,11 @@ export const ensureCandidateForCheckout = async (input: {
       });
     }
 
-    return {alunoId: existingUser.aluno.id};
+    return {
+      alunoId: existingUser.aluno.id,
+      ra: existingUser.aluno.ra,
+      senhaProvisoria: null,
+    };
   }
 
   const studentPassword = await createProvisionalPassword();
@@ -182,7 +186,11 @@ export const ensureCandidateForCheckout = async (input: {
     senhaProvisoria: studentPassword.senhaProvisoria,
   });
 
-  return {alunoId: enrollmentResult.alunoId};
+  return {
+    alunoId: enrollmentResult.alunoId,
+    ra: enrollmentResult.ra,
+    senhaProvisoria: studentPassword.senhaProvisoria,
+  };
 };
 
 const resolveGuardian = async (input: ICreateEnrollmentInput) => {
