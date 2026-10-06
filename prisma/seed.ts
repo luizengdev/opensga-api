@@ -308,7 +308,19 @@ const ensureComponente = async ({
   });
 
   if (existente) {
-    return existente;
+    return prisma.matrizComponente.update({
+      where: {id: existente.id},
+      data: {
+        semestreIdeal,
+        tipo,
+        tipoEntrega,
+        chTotal,
+        chPresencial,
+        chSincrona,
+        chAssincrona,
+        chExtensao,
+      },
+    });
   }
 
   return prisma.matrizComponente.create({
@@ -533,8 +545,8 @@ async function main() {
       tipo: "CORE_VIDA_CARREIRA",
       tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "SINCRONO_MEDIADO",
       chTotal: 60,
-      chPresencial: isPresencial ? 60 : 0,
-      chSincrona: isPresencial ? 0 : 20,
+      chPresencial: isPresencial ? 60 : 8,
+      chSincrona: isPresencial ? 0 : 12,
       chAssincrona: isPresencial ? 0 : 40,
       chExtensao: 0,
     });
@@ -546,9 +558,9 @@ async function main() {
       tipo: "ESPECIFICO",
       tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "ASSINCRONO_DIGITAL",
       chTotal: 60,
-      chPresencial: isPresencial ? 60 : 0,
-      chSincrona: 0,
-      chAssincrona: isPresencial ? 0 : 60,
+      chPresencial: isPresencial ? 60 : 8,
+      chSincrona: isPresencial ? 0 : 12,
+      chAssincrona: isPresencial ? 0 : 40,
       chExtensao: 0,
     });
 
@@ -559,9 +571,9 @@ async function main() {
       tipo: "EXTENSAO",
       tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "ASSINCRONO_DIGITAL",
       chTotal: 40,
-      chPresencial: isPresencial ? 40 : 0,
-      chSincrona: 0,
-      chAssincrona: isPresencial ? 0 : 40,
+      chPresencial: isPresencial ? 40 : 6,
+      chSincrona: isPresencial ? 0 : 8,
+      chAssincrona: isPresencial ? 0 : 26,
       chExtensao: 40,
     });
 
@@ -624,7 +636,8 @@ async function main() {
           create: {
             matriculaId: matricula.id,
             turmaId: turma.id,
-            notaA1: index === 1 ? 7.5 : null,
+            notaAv: index === 1 ? 7.5 : null,
+            notaSemestral: index === 1 ? 7.5 : null,
           },
         });
 

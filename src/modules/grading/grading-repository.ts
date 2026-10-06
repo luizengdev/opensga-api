@@ -1,4 +1,5 @@
 import {Prisma} from "../../generated/prisma/client.js";
+import {StatusDisciplina} from "../../generated/prisma/enums.js";
 import {prisma} from "../../lib/db.js";
 
 const isKnownRequestError = (error: unknown): error is Prisma.PrismaClientKnownRequestError => {
@@ -12,6 +13,39 @@ const decimalOrNull = (value: number | null) => {
 
   return new Prisma.Decimal(value);
 };
+
+const diarioSelect = {
+  id: true,
+  matriculaId: true,
+  turmaId: true,
+  notaAv: true,
+  notaAvs: true,
+  notaAv3: true,
+  notaSemestral: true,
+  mediaFinal: true,
+  habilitaAv3: true,
+  totalFaltas: true,
+  chCumprida: true,
+  statusDisciplina: true,
+  semestreFechado: true,
+  turma: {
+    select: {
+      id: true,
+      codigo: true,
+      disciplina: {select: {id: true, nome: true, codigo: true}},
+    },
+  },
+  matricula: {
+    select: {
+      aluno: {
+        select: {
+          ra: true,
+          user: {select: {nome: true}},
+        },
+      },
+    },
+  },
+} as const;
 
 export const findMatriculaForPlacement = async (matriculaId: string) => {
   return prisma.matricula.findUnique({
@@ -70,10 +104,11 @@ export const findDiarioById = async (id: string) => {
     where: {id},
     select: {
       id: true,
-      notaA1: true,
-      notaA2: true,
-      notaAF: true,
+      notaAv: true,
+      notaAvs: true,
+      notaAv3: true,
       totalFaltas: true,
+      semestreFechado: true,
       turma: {
         select: {
           disciplinaId: true,
@@ -108,35 +143,7 @@ export const listDiarios = async ({
       ...(matriculaId ? {matriculaId} : {}),
       ...(professorUserId ? {turma: {professor: {userId: professorUserId}}} : {}),
     },
-    select: {
-      id: true,
-      matriculaId: true,
-      turmaId: true,
-      notaA1: true,
-      notaA2: true,
-      notaAF: true,
-      notaFinal: true,
-      totalFaltas: true,
-      chCumprida: true,
-      aprovado: true,
-      turma: {
-        select: {
-          id: true,
-          codigo: true,
-          disciplina: {select: {id: true, nome: true, codigo: true}},
-        },
-      },
-      matricula: {
-        select: {
-          aluno: {
-            select: {
-              ra: true,
-              user: {select: {nome: true}},
-            },
-          },
-        },
-      },
-    },
+    select: diarioSelect,
     orderBy: {criadoEm: "desc"},
   });
 };
@@ -145,32 +152,13 @@ export const findDiarioRecordById = async (id: string) => {
   return prisma.diarioClasse.findUnique({
     where: {id},
     select: {
-      id: true,
-      matriculaId: true,
-      turmaId: true,
-      notaA1: true,
-      notaA2: true,
-      notaAF: true,
-      notaFinal: true,
-      totalFaltas: true,
-      chCumprida: true,
-      aprovado: true,
+      ...diarioSelect,
       turma: {
         select: {
           id: true,
           codigo: true,
           disciplina: {select: {id: true, nome: true, codigo: true}},
           professor: {select: {userId: true}},
-        },
-      },
-      matricula: {
-        select: {
-          aluno: {
-            select: {
-              ra: true,
-              user: {select: {nome: true}},
-            },
-          },
         },
       },
     },
@@ -192,45 +180,119 @@ export const deleteDiarioById = async (id: string) => {
   }
 };
 
-export const saveDiarioGrades = async ({
+export const saveDiarioLancamento = async ({
   id,
-  notaA1,
-  notaA2,
-  notaAF,
-  notaFinal,
+  notaAv,
+  notaAvs,
+  notaAv3,
+  notaSemestral,
+  habilitaAv3,
   totalFaltas,
-  chCumprida,
-  aprovado,
 }: {
   id: string;
-  notaA1: number | null;
-  notaA2: number | null;
-  notaAF: number | null;
-  notaFinal: number | null;
+  notaAv: number | null;
+  notaAvs: number | null;
+  notaAv3: number | null;
+  notaSemestral: number | null;
+  habilitaAv3: boolean;
   totalFaltas: number;
-  chCumprida: number;
-  aprovado: boolean | null;
 }) => {
   return prisma.diarioClasse.update({
     where: {id},
     data: {
-      notaA1: decimalOrNull(notaA1),
-      notaA2: decimalOrNull(notaA2),
-      notaAF: decimalOrNull(notaAF),
-      notaFinal: decimalOrNull(notaFinal),
+      notaAv: decimalOrNull(notaAv),
+      notaAvs: decimalOrNull(notaAvs),
+      notaAv3: decimalOrNull(notaAv3),
+      notaSemestral: decimalOrNull(notaSemestral),
+      habilitaAv3,
       totalFaltas,
-      chCumprida,
-      aprovado,
     },
     select: {
       id: true,
-      notaA1: true,
-      notaA2: true,
-      notaAF: true,
-      notaFinal: true,
+      notaAv: true,
+      notaAvs: true,
+      notaAv3: true,
+      notaSemestral: true,
+      mediaFinal: true,
+      habilitaAv3: true,
       totalFaltas: true,
       chCumprida: true,
-      aprovado: true,
+      statusDisciplina: true,
+      semestreFechado: true,
     },
   });
+};
+
+export const findTurmaForFechamento = async (turmaId: string) => {
+  return prisma.turma.findUnique({
+    where: {id: turmaId},
+    select: {
+      id: true,
+      professor: {select: {userId: true}},
+    },
+  });
+};
+
+export const listDiariosForFechamento = async (turmaId: string) => {
+  return prisma.diarioClasse.findMany({
+    where: {turmaId},
+    select: {
+      id: true,
+      notaAv: true,
+      notaAvs: true,
+      notaAv3: true,
+      totalFaltas: true,
+      semestreFechado: true,
+      turma: {select: {disciplinaId: true}},
+      matricula: {
+        select: {
+          matrizCurricular: {
+            select: {
+              componentes: {select: {disciplinaId: true, chTotal: true}},
+            },
+          },
+        },
+      },
+    },
+  });
+};
+
+export const closeDiariosAtomically = async (
+  updates: Array<{
+    id: string;
+    notaSemestral: number | null;
+    mediaFinal: number | null;
+    habilitaAv3: boolean;
+    statusDisciplina: StatusDisciplina;
+    chCumprida: number;
+  }>,
+) => {
+  return prisma.$transaction(
+    updates.map((update) =>
+      prisma.diarioClasse.update({
+        where: {id: update.id},
+        data: {
+          notaSemestral: decimalOrNull(update.notaSemestral),
+          mediaFinal: decimalOrNull(update.mediaFinal),
+          habilitaAv3: update.habilitaAv3,
+          statusDisciplina: update.statusDisciplina,
+          chCumprida: update.chCumprida,
+          semestreFechado: true,
+        },
+        select: {
+          id: true,
+          notaAv: true,
+          notaAvs: true,
+          notaAv3: true,
+          notaSemestral: true,
+          mediaFinal: true,
+          habilitaAv3: true,
+          totalFaltas: true,
+          chCumprida: true,
+          statusDisciplina: true,
+          semestreFechado: true,
+        },
+      }),
+    ),
+  );
 };

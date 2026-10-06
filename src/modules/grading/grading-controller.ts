@@ -1,8 +1,9 @@
 import {FastifyReply, FastifyRequest} from "fastify";
 
-import type {IEnrollInTurmaInput, IListDiariosQuery, IUpdateGradesInput} from "./grading-schemas.js";
+import type {IEnrollInTurmaInput, IFecharSemestreInput, IListDiariosQuery, IUpdateGradesInput} from "./grading-schemas.js";
 import {
   calculateAndSaveGrades,
+  closeTurmaSemester,
   enrollStudentInClass,
   fetchDiarioById,
   fetchDiarios,
@@ -75,5 +76,21 @@ export const updateGradesHandler = async (request: FastifyRequest<{Body: IUpdate
     return reply.status(200).send(diarioAtualizado);
   } catch (error) {
     return replyWithGradingError(error, reply, "Erro ao lançar avaliações.");
+  }
+};
+
+export const closeSemesterHandler = async (
+  request: FastifyRequest<{Body: IFecharSemestreInput}>,
+  reply: FastifyReply,
+) => {
+  try {
+    const resultado = await closeTurmaSemester({
+      ...request.body,
+      actorUserId: request.user.sub,
+      actorRole: request.user.role,
+    });
+    return reply.status(200).send(resultado);
+  } catch (error) {
+    return replyWithGradingError(error, reply, "Erro ao fechar o semestre da turma.");
   }
 };
