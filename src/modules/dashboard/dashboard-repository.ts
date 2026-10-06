@@ -68,12 +68,13 @@ export const countPendingGradeLaunches = async ({
 }) => {
   return prisma.diarioClasse.count({
     where: {
-      notaSemestral: null,
+      semestreFechado: false,
       turma: {
         professor: {userId: professorUserId},
         anoLetivo,
         semestreLetivo,
       },
+      OR: [{notaSemestral: null}, {habilitaAv3: true, notaAv3: null}],
     },
   });
 };
