@@ -3,6 +3,7 @@ import {
   countMatriculasByCampus,
   countMatriculasByCurso,
   countMatriculasByMatriz,
+  countDiariosByDisciplinaCampus,
   countTurmasByDisciplina,
   deleteCampusById,
   deleteComponenteById,
@@ -387,6 +388,36 @@ export const changeComponente = async ({id, data}: {id: string; data: IUpdateCom
 };
 
 export const removeComponente = async (id: string) => {
+  const componente = await findComponenteById(id);
+
+  if (!componente) {
+    throw new AcademicError("Componente curricular não encontrado.", 404);
+  }
+
+  const matriz = await findMatrizById(componente.matrizCurricularId);
+
+  if (!matriz) {
+    throw new AcademicError("Matriz curricular não encontrada.", 404);
+  }
+
+  const curso = await findCursoById(matriz.cursoId);
+
+  if (!curso) {
+    throw new AcademicError("Curso informado não existe.", 404);
+  }
+
+  const alunosEnturmados = await countDiariosByDisciplinaCampus({
+    campusId: curso.campusId,
+    disciplinaId: componente.disciplinaId,
+  });
+
+  if (alunosEnturmados > 0) {
+    throw new AcademicError(
+      `Não é possível remover o componente ${componente.disciplina.codigo} enquanto houver ${alunosEnturmados} aluno(s) enturmado(s) nesta disciplina. A exclusão do componente não é em cascata e não apaga turmas nem alunos.`,
+      409,
+    );
+  }
+
   const deleted = await deleteComponenteById(id);
 
   if (!deleted) {

@@ -202,6 +202,23 @@ export const countTurmasByDisciplina = async (disciplinaId: string) => {
   return prisma.turma.count({where: {disciplinaId}});
 };
 
+export const countDiariosByDisciplinaCampus = async ({
+  campusId,
+  disciplinaId,
+}: {
+  campusId: string;
+  disciplinaId: string;
+}) => {
+  return prisma.diarioClasse.count({
+    where: {
+      turma: {
+        campusId,
+        disciplinaId,
+      },
+    },
+  });
+};
+
 export const deleteDisciplinaById = async (id: string) => {
   return runOrNull(() => prisma.disciplina.delete({where: {id}, select: {id: true}}));
 };

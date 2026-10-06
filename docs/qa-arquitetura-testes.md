@@ -694,6 +694,7 @@ Cenário: Responder reclamação
 | :----------------------------------------------- | :---------------------------------- | :-------- |
 | DELETE campus/curso/matriz com matrícula filha   | 409                                 | QA-DEL-01 |
 | DELETE disciplina ou usuário professor com turma | 409                                 | QA-DEL-02 |
+| DELETE componente com alunos enturmados na disciplina | 409                              | QA-DEL-07 |
 | DELETE turma                                     | 200; diários somem                  | QA-DEL-03 |
 | DELETE matrícula                                 | 200; aluno permanece                | QA-DEL-04 |
 | DELETE responsável (via user)                    | aluno fica com `responsavelId` null | QA-DEL-05 |
@@ -711,6 +712,13 @@ Cenário: Professor com turma ofertada
   Dado o professor do seed (titular de turma)
   Quando envio DELETE /users/:id do user do professor
   Então a resposta é 409
+
+@QA-DEL-07
+Cenário: Componente com alunos enturmados na disciplina
+  Dado um componente cuja disciplina possui alunos no diário de classe do campus do curso
+  Quando envio DELETE /academic/componentes/:id
+  Então a resposta é 409
+  E turmas e matrículas permanecem
 ```
 
 ---
