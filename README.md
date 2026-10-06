@@ -45,7 +45,7 @@ Estudo de um SGA/ERP universitário: da matrícula à avaliação, com regras ac
 | :--- | :--- |
 | Arquitetura hexagonal por módulo | Separação `route → controller → service → repository` |
 | RBAC com JWT | Papéis `ADMIN`, `PROFESSOR`, `ALUNO`, `RESPONSAVEL` |
-| Domínio acadêmico | Matriz curricular, extensão ≥ 10% (CNE/CES 7/2018), notas A1/A2/AF |
+| Domínio acadêmico | Matriz curricular, Decreto 12.456/2026, extensão ≥ 10%, notas AV/AVS/AV3 |
 | Stripe no servidor | Catálogo, inscrição pública, Checkout (cartão/boleto) e webhook |
 | Contrato vivo | OpenAPI + Scalar em [`/docs`](http://localhost:3333/docs) |
 
@@ -130,7 +130,7 @@ Prefixo de negócio: **`/api/v1`**. Inscrição pública também em `/api` (sem 
 | Usuários | `/users`, `/users/professores`, `/users/alunos` | `ADMIN` |
 | Acadêmico | `/academic/campi` … `/cursos` … `/matrizes` … `/turmas` | `ADMIN`¹ |
 | Matrícula | `/matriculas` | `ADMIN` |
-| Diário | `/diario`, `/diario/enturmar`, `/diario/avaliar` | `ADMIN` + titular |
+| Diário | `/diario`, `/diario/enturmar`, `/diario/avaliar`, `/diario/fechar-semestre` | `ADMIN` + titular |
 | Financeiro | `/financeiro/precos`, `/faturas` | `ADMIN` |
 | Ingresso | `GET /api/catalogo`, `POST /api/inscricao`, `POST /api/checkout` | público |
 | Webhook | `POST /webhooks/stripe` | assinatura Stripe |
