@@ -446,7 +446,7 @@ async function main() {
     create: {
       nome: "Luiz Almeida Alves Filho",
       email: "testeadmin@opensga.dev",
-      cpf: "000.000.000-00",
+      cpf: "121.121.121-21",
       senhaHash: senhaAdmin,
       role: "ADMIN",
       ativo: true,
