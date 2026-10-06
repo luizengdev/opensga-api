@@ -8,6 +8,7 @@ import {
   findAlunoById,
   findProfessorById,
   findResponsavelById,
+  findConflictingUser,
   findUserByCpfOrEmail,
   findUserById,
   insertAdminUser,
@@ -89,7 +90,34 @@ export const createNewAdmin = async (input: ICreateAdminInput) => {
 };
 
 export const changeUser = async ({id, data}: {id: string; data: IUpdateUserInput}) => {
-  const user = await updateUserById({id, data});
+  const current = await findUserById(id);
+
+  if (!current) {
+    throw new UsersError("Usuário não encontrado.", 404);
+  }
+
+  const {senha, ...fields} = data;
+
+  if (fields.email !== undefined || fields.cpf !== undefined) {
+    const conflict = await findConflictingUser({
+      cpf: fields.cpf,
+      email: fields.email,
+      excludeId: id,
+    });
+
+    if (conflict) {
+      throw new UsersError("CPF ou e-mail já cadastrado na instituição.", 400);
+    }
+  }
+
+  const senhaHash = senha ? await bcrypt.hash(senha, 10) : undefined;
+  const user = await updateUserById({
+    id,
+    data: {
+      ...fields,
+      ...(senhaHash ? {senhaHash} : {}),
+    },
+  });
 
   if (!user) {
     throw new UsersError("Usuário não encontrado.", 404);

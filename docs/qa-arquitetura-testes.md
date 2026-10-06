@@ -228,6 +228,8 @@ Cenário: Conta inativada após o login
 - Listar usuários com filtro opcional `?role=`.
 - Criar ADMIN (`POST /users/admins`) e PROFESSOR (`POST /users/professores`) com senha 8–72, e-mail e CPF únicos.
 - Aluno e responsável **não** têm POST próprio: nascem em `POST /matriculas`.
+- `PATCH /users/:id` atualiza nome, e-mail, CPF, telefone, ativo e senha opcional. Campos omitidos preservam o valor. E-mail e CPF únicos entre usuários (400 se conflito). Senha omitida preserva o hash.
+- Pessoa **não** tem endereço: `endereco` existe só em `Campus`.
 - `DELETE /users/:id` não pode ser o próprio autenticado (400).
 - Apagar professor com turma → **409**.
 - Apagar usuário remove perfil e reclamações (Cascade).
@@ -239,7 +241,9 @@ Cenário: Conta inativada após o login
 **CA-USR-03.** CPF ou e-mail duplicado → 400.  
 **CA-USR-04.** `GET /users/alunos` e `GET /users/responsaveis` listam perfis existentes.  
 **CA-USR-05.** ADMIN não consegue `DELETE` o próprio `id` → 400.  
-**CA-USR-06.** DELETE de professor titular de turma → 409.
+**CA-USR-06.** DELETE de professor titular de turma → 409.  
+**CA-USR-07.** `PATCH /users/:id` com e-mail ou CPF de outro usuário → 400.  
+**CA-USR-08.** `PATCH /users/:id` sem `senha` não altera o hash; com senha nova (8–72) o login antigo retorna 401.
 
 ```gherkin
 @QA-USR-02
@@ -253,6 +257,13 @@ Cenário: Cadastro de professor
 Cenário: Autodelete bloqueado
   Dado o JWT do próprio ADMIN
   Quando envio DELETE /api/v1/users/{{meuUserId}}
+  Então a resposta é 400
+
+@QA-USR-07
+Cenário: E-mail duplicado na atualização
+  Dado um JWT de ADMIN
+  E dois usuários com e-mails distintos
+  Quando envio PATCH /api/v1/users/{{idDoPrimeiro}} com o e-mail do segundo
   Então a resposta é 400
 ```
 

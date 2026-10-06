@@ -1,7 +1,12 @@
 import {Prisma} from "../../generated/prisma/client.js";
 import {Role} from "../../generated/prisma/enums.js";
 import {prisma} from "../../lib/db.js";
-import type {ICreateProfessorInput, IListUsersQuery, IUpdateProfessorInput, IUpdateUserInput} from "./users-schemas.js";
+import type {
+  ICreateProfessorInput,
+  IListUsersQuery,
+  IUpdateProfessorInput,
+  IUpdateUserPersist,
+} from "./users-schemas.js";
 
 const isKnownRequestError = (error: unknown): error is Prisma.PrismaClientKnownRequestError => {
   return error instanceof Prisma.PrismaClientKnownRequestError;
@@ -77,6 +82,27 @@ export const findUserByCpfOrEmail = async ({cpf, email}: {cpf: string; email: st
   });
 };
 
+export const findConflictingUser = async ({
+  cpf,
+  email,
+  excludeId,
+}: {
+  cpf?: string;
+  email?: string;
+  excludeId: string;
+}) => {
+  const or = [...(cpf ? [{cpf}] : []), ...(email ? [{email}] : [])];
+
+  if (or.length === 0) {
+    return null;
+  }
+
+  return prisma.user.findFirst({
+    where: {id: {not: excludeId}, OR: or},
+    select: {id: true},
+  });
+};
+
 export const insertAdminUser = async ({
   nome,
   email,
@@ -103,7 +129,7 @@ export const insertAdminUser = async ({
   });
 };
 
-export const updateUserById = async ({id, data}: {id: string; data: IUpdateUserInput}) => {
+export const updateUserById = async ({id, data}: {id: string; data: IUpdateUserPersist}) => {
   return runOrNull(() => prisma.user.update({where: {id}, data, select: userSelect}));
 };
 
