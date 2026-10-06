@@ -36,13 +36,19 @@ export const listComunicadosHandler = async (
   request: FastifyRequest<{Querystring: IListComunicadosQuery}>,
   reply: FastifyReply,
 ) => {
-  const comunicados = await fetchComunicados(request.query);
+  const comunicados = await fetchComunicados({
+    query: request.query,
+    actorRole: request.user.role,
+  });
   return reply.status(200).send(comunicados);
 };
 
 export const getComunicadoHandler = async (request: FastifyRequest<{Params: {id: string}}>, reply: FastifyReply) => {
   try {
-    const comunicado = await fetchComunicadoById(request.params.id);
+    const comunicado = await fetchComunicadoById({
+      id: request.params.id,
+      actorRole: request.user.role,
+    });
     return reply.status(200).send(comunicado);
   } catch (error) {
     return replyWithCommunicationsError(error, reply, "Erro ao buscar comunicado.");

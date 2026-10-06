@@ -23,9 +23,9 @@ import type {
 } from "./communications-schemas.js";
 
 export class CommunicationsError extends Error {
-  readonly statusCode: 400 | 404;
+  readonly statusCode: 400 | 403 | 404;
 
-  constructor(message: string, statusCode: 400 | 404) {
+  constructor(message: string, statusCode: 400 | 403 | 404) {
     super(message);
     this.name = "CommunicationsError";
     this.statusCode = statusCode;
@@ -62,16 +62,27 @@ const mapReclamacao = (reclamacao: {
   };
 };
 
-export const fetchComunicados = async (query: IListComunicadosQuery) => {
-  const comunicados = await listComunicados(query);
+export const fetchComunicados = async ({
+  query,
+  actorRole,
+}: {
+  query: IListComunicadosQuery;
+  actorRole: Role;
+}) => {
+  const publicoAlvo = actorRole === Role.PROFESSOR ? Role.PROFESSOR : query.publicoAlvo;
+  const comunicados = await listComunicados({publicoAlvo});
   return comunicados.map(mapComunicado);
 };
 
-export const fetchComunicadoById = async (id: string) => {
+export const fetchComunicadoById = async ({id, actorRole}: {id: string; actorRole: Role}) => {
   const comunicado = await findComunicadoById(id);
 
   if (!comunicado) {
     throw new CommunicationsError("Comunicado não encontrado.", 404);
+  }
+
+  if (actorRole === Role.PROFESSOR && !comunicado.publicoAlvo.includes(Role.PROFESSOR)) {
+    throw new CommunicationsError("Este comunicado não é destinado ao corpo docente.", 403);
   }
 
   return mapComunicado(comunicado);

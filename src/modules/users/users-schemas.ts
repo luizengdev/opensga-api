@@ -33,9 +33,12 @@ export const createAdminSchema = z.object({
 
 export const updateUserSchema = z.object({
   nome: z.string().min(3).max(150).optional(),
+  email: z.email().max(150).optional(),
+  cpf: z.string().length(14).optional(),
   telefone: z.string().min(10).max(20).nullable().optional(),
   avatarUrl: z.string().max(500).nullable().optional(),
   ativo: z.boolean().optional(),
+  senha: z.string().min(8).max(72).optional(),
 });
 
 export const createProfessorSchema = z.object({
@@ -98,5 +101,14 @@ export const responsavelListResponseSchema = z.array(responsavelResponseSchema);
 export type IListUsersQuery = z.infer<typeof listUsersQuerySchema>;
 export type ICreateAdminInput = z.infer<typeof createAdminSchema>;
 export type IUpdateUserInput = z.infer<typeof updateUserSchema>;
+export interface IUpdateUserPersist {
+  nome?: string;
+  email?: string;
+  cpf?: string;
+  telefone?: string | null;
+  avatarUrl?: string | null;
+  ativo?: boolean;
+  senhaHash?: string;
+}
 export type ICreateProfessorInput = z.infer<typeof createProfessorSchema>;
 export type IUpdateProfessorInput = z.infer<typeof updateProfessorSchema>;

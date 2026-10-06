@@ -3,6 +3,7 @@ import {
   countMatriculasByCampus,
   countMatriculasByCurso,
   countMatriculasByMatriz,
+  countDiariosByDisciplinaCampus,
   countTurmasByDisciplina,
   deleteCampusById,
   deleteComponenteById,
@@ -17,6 +18,7 @@ import {
   findMatrizById,
   findMatrizWithComponentes,
   findProfessorById,
+  findChTotalByDisciplinaCampus,
   findTurmaById,
   insertCampus,
   insertCurso,
@@ -386,6 +388,36 @@ export const changeComponente = async ({id, data}: {id: string; data: IUpdateCom
 };
 
 export const removeComponente = async (id: string) => {
+  const componente = await findComponenteById(id);
+
+  if (!componente) {
+    throw new AcademicError("Componente curricular não encontrado.", 404);
+  }
+
+  const matriz = await findMatrizById(componente.matrizCurricularId);
+
+  if (!matriz) {
+    throw new AcademicError("Matriz curricular não encontrada.", 404);
+  }
+
+  const curso = await findCursoById(matriz.cursoId);
+
+  if (!curso) {
+    throw new AcademicError("Curso informado não existe.", 404);
+  }
+
+  const alunosEnturmados = await countDiariosByDisciplinaCampus({
+    campusId: curso.campusId,
+    disciplinaId: componente.disciplinaId,
+  });
+
+  if (alunosEnturmados > 0) {
+    throw new AcademicError(
+      `Não é possível remover o componente ${componente.disciplina.codigo} enquanto houver ${alunosEnturmados} aluno(s) enturmado(s) nesta disciplina. A exclusão do componente não é em cascata e não apaga turmas nem alunos.`,
+      409,
+    );
+  }
+
   const deleted = await deleteComponenteById(id);
 
   if (!deleted) {
@@ -417,10 +449,6 @@ export const auditMatrizForMecCompliance = async ({
 
   if (!matriz) {
     throw new AcademicError("Matriz curricular não encontrada no sistema.", 404);
-  }
-
-  if (matriz.componentes.length === 0) {
-    throw new AcademicError("A matriz curricular informada não possui componentes vinculados.", 400);
   }
 
   const totais = matriz.componentes.reduce(
@@ -494,7 +522,23 @@ export const createNewTurma = async (input: ICreateTurmaInput) => {
     throw new AcademicError("Professor informado não existe.", 404);
   }
 
-  return insertTurma(input);
+  const turma = await insertTurma(input);
+  return attachChTotalToTurma(turma);
+};
+
+const chaveCargaHoraria = ({disciplinaId, campusId}: {disciplinaId: string; campusId: string}) => {
+  return `${disciplinaId}:${campusId}`;
+};
+
+const attachChTotalToTurma = async <T extends {disciplinaId: string; campusId: string}>(turma: T) => {
+  const cargas = await findChTotalByDisciplinaCampus([
+    {disciplinaId: turma.disciplinaId, campusId: turma.campusId},
+  ]);
+
+  return {
+    ...turma,
+    chTotal: cargas.get(chaveCargaHoraria(turma)) ?? null,
+  };
 };
 
 export const fetchTurmas = async ({
@@ -507,9 +551,14 @@ export const fetchTurmas = async ({
     professorUserId: actorRole === Role.PROFESSOR ? actorUserId : undefined,
   });
 
+  const cargas = await findChTotalByDisciplinaCampus(
+    turmas.map((turma) => ({disciplinaId: turma.disciplinaId, campusId: turma.campusId})),
+  );
+
   return turmas.map(({_count, ...turma}) => ({
     ...turma,
     quantidadeDiarios: _count.diarios,
+    chTotal: cargas.get(chaveCargaHoraria(turma)) ?? null,
   }));
 };
 
@@ -532,7 +581,7 @@ export const fetchTurmaById = async ({
     throw new AcademicError("Você não é o professor responsável por esta turma.", 403);
   }
 
-  return turma;
+  return attachChTotalToTurma(turma);
 };
 
 export const changeTurma = async ({id, data}: {id: string; data: IUpdateTurmaInput}) => {
@@ -550,7 +599,7 @@ export const changeTurma = async ({id, data}: {id: string; data: IUpdateTurmaInp
     throw new AcademicError("Turma não encontrada.", 404);
   }
 
-  return turma;
+  return attachChTotalToTurma(turma);
 };
 
 export const removeTurma = async (id: string) => {
