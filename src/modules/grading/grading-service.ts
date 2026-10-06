@@ -49,19 +49,29 @@ const resolveNota = (inputNota: number | undefined, storedNota: Prisma.Decimal |
   return decimalToNumber(storedNota);
 };
 
-const mapAvaliacao = (diario: {
-  id: string;
-  notaAv: Prisma.Decimal | null;
-  notaAvs: Prisma.Decimal | null;
-  notaAv3: Prisma.Decimal | null;
-  notaSemestral: Prisma.Decimal | null;
-  mediaFinal: Prisma.Decimal | null;
-  habilitaAv3: boolean;
-  totalFaltas: number;
-  chCumprida: number;
-  statusDisciplina: StatusDisciplina;
-  semestreFechado: boolean;
-}): IAvaliacaoOutput => {
+const chTotalDoComponente = (
+  componentes: Array<{disciplinaId: string; chTotal: number}>,
+  disciplinaId: string,
+) => {
+  return componentes.find((componente) => componente.disciplinaId === disciplinaId)?.chTotal ?? 0;
+};
+
+const mapAvaliacao = (
+  diario: {
+    id: string;
+    notaAv: Prisma.Decimal | null;
+    notaAvs: Prisma.Decimal | null;
+    notaAv3: Prisma.Decimal | null;
+    notaSemestral: Prisma.Decimal | null;
+    mediaFinal: Prisma.Decimal | null;
+    habilitaAv3: boolean;
+    totalFaltas: number;
+    chCumprida: number;
+    statusDisciplina: StatusDisciplina;
+    semestreFechado: boolean;
+  },
+  chTotal: number,
+): IAvaliacaoOutput => {
   return {
     id: diario.id,
     notaAv: decimalToNumber(diario.notaAv),
@@ -71,6 +81,7 @@ const mapAvaliacao = (diario: {
     mediaFinal: decimalToNumber(diario.mediaFinal),
     habilitaAv3: diario.habilitaAv3,
     totalFaltas: diario.totalFaltas,
+    chTotal,
     chCumprida: diario.chCumprida,
     statusDisciplina: diario.statusDisciplina,
     semestreFechado: diario.semestreFechado,
@@ -140,8 +151,11 @@ const mapDiario = (diario: {
   chCumprida: number;
   statusDisciplina: StatusDisciplina;
   semestreFechado: boolean;
-  turma: IDiarioOutput["turma"] & {professor?: {userId: string}};
-  matricula: {aluno: {ra: string; user: {nome: string}}};
+  turma: IDiarioOutput["turma"] & {disciplinaId: string; professor?: {userId: string}};
+  matricula: {
+    aluno: {ra: string; user: {nome: string}};
+    matrizCurricular: {componentes: Array<{disciplinaId: string; chTotal: number}>};
+  };
 }): IDiarioOutput => {
   return {
     id: diario.id,
@@ -154,6 +168,7 @@ const mapDiario = (diario: {
     mediaFinal: decimalToNumber(diario.mediaFinal),
     habilitaAv3: diario.habilitaAv3,
     totalFaltas: diario.totalFaltas,
+    chTotal: chTotalDoComponente(diario.matricula.matrizCurricular.componentes, diario.turma.disciplinaId),
     chCumprida: diario.chCumprida,
     statusDisciplina: diario.statusDisciplina,
     semestreFechado: diario.semestreFechado,
@@ -266,7 +281,7 @@ export const calculateAndSaveGrades = async ({
     totalFaltas: faltas,
   });
 
-  return mapAvaliacao(saved);
+  return mapAvaliacao(saved, componenteMatriz.chTotal);
 };
 
 export const closeTurmaSemester = async ({
@@ -345,15 +360,25 @@ export const closeTurmaSemester = async ({
 
     return {
       id: diario.id,
+      chTotal: componenteMatriz.chTotal,
       ...fechamento,
     };
   });
 
-  const saved = await closeDiariosAtomically(updates);
+  const saved = await closeDiariosAtomically(
+    updates.map(({id, notaSemestral, mediaFinal, habilitaAv3, statusDisciplina, chCumprida}) => ({
+      id,
+      notaSemestral,
+      mediaFinal,
+      habilitaAv3,
+      statusDisciplina,
+      chCumprida,
+    })),
+  );
 
   return {
     turmaId,
     fechados: saved.length,
-    diarios: saved.map(mapAvaliacao),
+    diarios: saved.map((diario, index) => mapAvaliacao(diario, updates[index].chTotal)),
   };
 };

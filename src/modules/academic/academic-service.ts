@@ -17,6 +17,7 @@ import {
   findMatrizById,
   findMatrizWithComponentes,
   findProfessorById,
+  findChTotalByDisciplinaCampus,
   findTurmaById,
   insertCampus,
   insertCurso,
@@ -419,10 +420,6 @@ export const auditMatrizForMecCompliance = async ({
     throw new AcademicError("Matriz curricular não encontrada no sistema.", 404);
   }
 
-  if (matriz.componentes.length === 0) {
-    throw new AcademicError("A matriz curricular informada não possui componentes vinculados.", 400);
-  }
-
   const totais = matriz.componentes.reduce(
     (acc, componente) => ({
       chTotal: acc.chTotal + componente.chTotal,
@@ -494,7 +491,23 @@ export const createNewTurma = async (input: ICreateTurmaInput) => {
     throw new AcademicError("Professor informado não existe.", 404);
   }
 
-  return insertTurma(input);
+  const turma = await insertTurma(input);
+  return attachChTotalToTurma(turma);
+};
+
+const chaveCargaHoraria = ({disciplinaId, campusId}: {disciplinaId: string; campusId: string}) => {
+  return `${disciplinaId}:${campusId}`;
+};
+
+const attachChTotalToTurma = async <T extends {disciplinaId: string; campusId: string}>(turma: T) => {
+  const cargas = await findChTotalByDisciplinaCampus([
+    {disciplinaId: turma.disciplinaId, campusId: turma.campusId},
+  ]);
+
+  return {
+    ...turma,
+    chTotal: cargas.get(chaveCargaHoraria(turma)) ?? null,
+  };
 };
 
 export const fetchTurmas = async ({
@@ -507,9 +520,14 @@ export const fetchTurmas = async ({
     professorUserId: actorRole === Role.PROFESSOR ? actorUserId : undefined,
   });
 
+  const cargas = await findChTotalByDisciplinaCampus(
+    turmas.map((turma) => ({disciplinaId: turma.disciplinaId, campusId: turma.campusId})),
+  );
+
   return turmas.map(({_count, ...turma}) => ({
     ...turma,
     quantidadeDiarios: _count.diarios,
+    chTotal: cargas.get(chaveCargaHoraria(turma)) ?? null,
   }));
 };
 
@@ -532,7 +550,7 @@ export const fetchTurmaById = async ({
     throw new AcademicError("Você não é o professor responsável por esta turma.", 403);
   }
 
-  return turma;
+  return attachChTotalToTurma(turma);
 };
 
 export const changeTurma = async ({id, data}: {id: string; data: IUpdateTurmaInput}) => {
@@ -550,7 +568,7 @@ export const changeTurma = async ({id, data}: {id: string; data: IUpdateTurmaInp
     throw new AcademicError("Turma não encontrada.", 404);
   }
 
-  return turma;
+  return attachChTotalToTurma(turma);
 };
 
 export const removeTurma = async (id: string) => {

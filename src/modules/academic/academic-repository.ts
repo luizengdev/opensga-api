@@ -355,6 +355,43 @@ export const findTurmaById = async (id: string) => {
   });
 };
 
+export const findChTotalByDisciplinaCampus = async (
+  pares: Array<{disciplinaId: string; campusId: string}>,
+) => {
+  if (pares.length === 0) {
+    return new Map<string, number>();
+  }
+
+  const unicos = Array.from(
+    new Map(pares.map((par) => [`${par.disciplinaId}:${par.campusId}`, par])).values(),
+  );
+
+  const componentes = await prisma.matrizComponente.findMany({
+    where: {
+      OR: unicos.map((par) => ({
+        disciplinaId: par.disciplinaId,
+        matrizCurricular: {curso: {campusId: par.campusId}},
+      })),
+    },
+    select: {
+      disciplinaId: true,
+      chTotal: true,
+      matrizCurricular: {select: {curso: {select: {campusId: true}}}},
+    },
+  });
+
+  return componentes.reduce((acc, componente) => {
+    const chave = `${componente.disciplinaId}:${componente.matrizCurricular.curso.campusId}`;
+    const atual = acc.get(chave);
+
+    if (atual === undefined || componente.chTotal > atual) {
+      acc.set(chave, componente.chTotal);
+    }
+
+    return acc;
+  }, new Map<string, number>());
+};
+
 export const updateTurmaById = async ({id, data}: {id: string; data: IUpdateTurmaInput}) => {
   return runOrNull(() => prisma.turma.update({where: {id}, data, select: turmaPublicSelect}));
 };

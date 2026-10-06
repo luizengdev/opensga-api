@@ -259,6 +259,7 @@ export const turmaResponseSchema = z.object({
   tipoEntrega: z.enum(TipoEntrega),
   disciplina: disciplinaResumoSchema,
   professor: professorResumoSchema,
+  chTotal: z.number().int().nullable(),
 });
 
 export const turmaListItemSchema = turmaResponseSchema.extend({

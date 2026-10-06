@@ -32,6 +32,7 @@ const diarioSelect = {
     select: {
       id: true,
       codigo: true,
+      disciplinaId: true,
       disciplina: {select: {id: true, nome: true, codigo: true}},
     },
   },
@@ -41,6 +42,11 @@ const diarioSelect = {
         select: {
           ra: true,
           user: {select: {nome: true}},
+        },
+      },
+      matrizCurricular: {
+        select: {
+          componentes: {select: {disciplinaId: true, chTotal: true}},
         },
       },
     },
@@ -157,6 +163,7 @@ export const findDiarioRecordById = async (id: string) => {
         select: {
           id: true,
           codigo: true,
+          disciplinaId: true,
           disciplina: {select: {id: true, nome: true, codigo: true}},
           professor: {select: {userId: true}},
         },
