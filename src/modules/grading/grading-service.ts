@@ -1,27 +1,32 @@
 import {Prisma} from "../../generated/prisma/client.js";
-import {Role, StatusMatricula} from "../../generated/prisma/enums.js";
+import {Role, StatusDisciplina, StatusMatricula} from "../../generated/prisma/enums.js";
+import {evaluateFechamento, evaluateLancamento} from "./grading-engine.js";
 import {
+  closeDiariosAtomically,
   createDiarioEntry,
   deleteDiarioById,
   findDiarioById,
   findDiarioRecordById,
   findMatriculaForPlacement,
+  findTurmaForFechamento,
   findTurmaForPlacement,
   listDiarios,
-  saveDiarioGrades,
+  listDiariosForFechamento,
+  saveDiarioLancamento,
 } from "./grading-repository.js";
 import type {
   IAvaliacaoOutput,
   IDiarioOutput,
   IEnrollInTurmaInput,
+  IFecharSemestreOutput,
   IListDiariosQuery,
   IUpdateGradesInput,
 } from "./grading-schemas.js";
 
 export class GradingError extends Error {
-  readonly statusCode: 400 | 403 | 404;
+  readonly statusCode: 400 | 403 | 404 | 409;
 
-  constructor(message: string, statusCode: 400 | 403 | 404) {
+  constructor(message: string, statusCode: 400 | 403 | 404 | 409) {
     super(message);
     this.name = "GradingError";
     this.statusCode = statusCode;
@@ -42,6 +47,34 @@ const resolveNota = (inputNota: number | undefined, storedNota: Prisma.Decimal |
   }
 
   return decimalToNumber(storedNota);
+};
+
+const mapAvaliacao = (diario: {
+  id: string;
+  notaAv: Prisma.Decimal | null;
+  notaAvs: Prisma.Decimal | null;
+  notaAv3: Prisma.Decimal | null;
+  notaSemestral: Prisma.Decimal | null;
+  mediaFinal: Prisma.Decimal | null;
+  habilitaAv3: boolean;
+  totalFaltas: number;
+  chCumprida: number;
+  statusDisciplina: StatusDisciplina;
+  semestreFechado: boolean;
+}): IAvaliacaoOutput => {
+  return {
+    id: diario.id,
+    notaAv: decimalToNumber(diario.notaAv),
+    notaAvs: decimalToNumber(diario.notaAvs),
+    notaAv3: decimalToNumber(diario.notaAv3),
+    notaSemestral: decimalToNumber(diario.notaSemestral),
+    mediaFinal: decimalToNumber(diario.mediaFinal),
+    habilitaAv3: diario.habilitaAv3,
+    totalFaltas: diario.totalFaltas,
+    chCumprida: diario.chCumprida,
+    statusDisciplina: diario.statusDisciplina,
+    semestreFechado: diario.semestreFechado,
+  };
 };
 
 export const enrollStudentInClass = async (input: IEnrollInTurmaInput) => {
@@ -97,13 +130,16 @@ const mapDiario = (diario: {
   id: string;
   matriculaId: string;
   turmaId: string;
-  notaA1: Prisma.Decimal | null;
-  notaA2: Prisma.Decimal | null;
-  notaAF: Prisma.Decimal | null;
-  notaFinal: Prisma.Decimal | null;
+  notaAv: Prisma.Decimal | null;
+  notaAvs: Prisma.Decimal | null;
+  notaAv3: Prisma.Decimal | null;
+  notaSemestral: Prisma.Decimal | null;
+  mediaFinal: Prisma.Decimal | null;
+  habilitaAv3: boolean;
   totalFaltas: number;
   chCumprida: number;
-  aprovado: boolean | null;
+  statusDisciplina: StatusDisciplina;
+  semestreFechado: boolean;
   turma: IDiarioOutput["turma"] & {professor?: {userId: string}};
   matricula: {aluno: {ra: string; user: {nome: string}}};
 }): IDiarioOutput => {
@@ -111,13 +147,16 @@ const mapDiario = (diario: {
     id: diario.id,
     matriculaId: diario.matriculaId,
     turmaId: diario.turmaId,
-    notaA1: decimalToNumber(diario.notaA1),
-    notaA2: decimalToNumber(diario.notaA2),
-    notaAF: decimalToNumber(diario.notaAF),
-    notaFinal: decimalToNumber(diario.notaFinal),
+    notaAv: decimalToNumber(diario.notaAv),
+    notaAvs: decimalToNumber(diario.notaAvs),
+    notaAv3: decimalToNumber(diario.notaAv3),
+    notaSemestral: decimalToNumber(diario.notaSemestral),
+    mediaFinal: decimalToNumber(diario.mediaFinal),
+    habilitaAv3: diario.habilitaAv3,
     totalFaltas: diario.totalFaltas,
     chCumprida: diario.chCumprida,
-    aprovado: diario.aprovado,
+    statusDisciplina: diario.statusDisciplina,
+    semestreFechado: diario.semestreFechado,
     turma: {
       id: diario.turma.id,
       codigo: diario.turma.codigo,
@@ -189,6 +228,10 @@ export const calculateAndSaveGrades = async ({
     throw new GradingError("Você não é o professor responsável por esta turma.", 403);
   }
 
+  if (diario.semestreFechado) {
+    throw new GradingError("O semestre desta turma já foi fechado. Reabra o lançamento com a secretaria.", 409);
+  }
+
   const componenteMatriz = diario.matricula.matrizCurricular.componentes.find(
     (componente) => componente.disciplinaId === diario.turma.disciplinaId,
   );
@@ -197,54 +240,120 @@ export const calculateAndSaveGrades = async ({
     throw new GradingError("A disciplina desta turma não compõe a matriz curricular vinculada à matrícula.", 400);
   }
 
-  const a1 = resolveNota(input.notaA1, diario.notaA1);
-  const a2 = resolveNota(input.notaA2, diario.notaA2);
-  const af = resolveNota(input.notaAF, diario.notaAF);
+  const notaAv = resolveNota(input.notaAv, diario.notaAv);
+  const notaAvs = resolveNota(input.notaAvs, diario.notaAvs);
+  const notaAv3 = resolveNota(input.notaAv3, diario.notaAv3);
   const faltas = input.totalFaltas !== undefined ? input.totalFaltas : diario.totalFaltas;
-  const chTotalDisciplina = componenteMatriz.chTotal;
-  const limiteMaximoFaltas = Math.floor(chTotalDisciplina * 0.25);
-  const reprovadoPorFalta = faltas > limiteMaximoFaltas;
-
-  let notaFinal: number | null = null;
-  let aprovado: boolean | null = null;
-
-  if (a1 !== null && a2 !== null) {
-    const mediaSemestral = Number((a1 * 0.4 + a2 * 0.6).toFixed(2));
-
-    if (reprovadoPorFalta) {
-      aprovado = false;
-      notaFinal = mediaSemestral;
-    } else if (mediaSemestral >= 6) {
-      aprovado = true;
-      notaFinal = mediaSemestral;
-    } else if (af !== null) {
-      notaFinal = Number(((mediaSemestral + af) / 2).toFixed(2));
-      aprovado = notaFinal >= 5;
-    } else {
-      notaFinal = mediaSemestral;
-      aprovado = null;
-    }
-  }
-
-  const saved = await saveDiarioGrades({
-    id: input.diarioClasseId,
-    notaA1: a1,
-    notaA2: a2,
-    notaAF: af,
-    notaFinal,
+  const lancamento = evaluateLancamento({
+    notaAv,
+    notaAvs,
+    notaAv3,
     totalFaltas: faltas,
-    chCumprida: aprovado === true ? chTotalDisciplina : 0,
-    aprovado,
+    chTotal: componenteMatriz.chTotal,
   });
 
+  if (input.notaAv3 !== undefined && notaAv3 !== null && !lancamento.habilitaAv3) {
+    throw new GradingError("A AV3 só pode ser lançada quando a nota semestral for inferior a 6,0 e a frequência for regular.", 400);
+  }
+
+  const saved = await saveDiarioLancamento({
+    id: input.diarioClasseId,
+    notaAv,
+    notaAvs,
+    notaAv3: lancamento.habilitaAv3 ? notaAv3 : null,
+    notaSemestral: lancamento.notaSemestral,
+    habilitaAv3: lancamento.habilitaAv3,
+    totalFaltas: faltas,
+  });
+
+  return mapAvaliacao(saved);
+};
+
+export const closeTurmaSemester = async ({
+  turmaId,
+  actorRole,
+  actorUserId,
+}: {
+  turmaId: string;
+  actorRole: Role;
+  actorUserId: string;
+}): Promise<IFecharSemestreOutput> => {
+  const turma = await findTurmaForFechamento(turmaId);
+
+  if (!turma) {
+    throw new GradingError("Turma não encontrada.", 404);
+  }
+
+  if (actorRole === Role.PROFESSOR && turma.professor.userId !== actorUserId) {
+    throw new GradingError("Você não é o professor responsável por esta turma.", 403);
+  }
+
+  const diarios = await listDiariosForFechamento(turmaId);
+
+  if (diarios.length === 0) {
+    throw new GradingError("A turma não possui diários para fechamento.", 400);
+  }
+
+  const pendencias = diarios.flatMap((diario) => {
+    const componenteMatriz = diario.matricula.matrizCurricular.componentes.find(
+      (componente) => componente.disciplinaId === diario.turma.disciplinaId,
+    );
+
+    if (!componenteMatriz) {
+      return [`Diário ${diario.id}: disciplina fora da matriz.`];
+    }
+
+    const fechamento = evaluateFechamento({
+      notaAv: decimalToNumber(diario.notaAv),
+      notaAvs: decimalToNumber(diario.notaAvs),
+      notaAv3: decimalToNumber(diario.notaAv3),
+      totalFaltas: diario.totalFaltas,
+      chTotal: componenteMatriz.chTotal,
+    });
+
+    if (fechamento.statusDisciplina === StatusDisciplina.EM_ABERTO) {
+      if (fechamento.notaSemestral === null) {
+        return [`Diário ${diario.id}: AV ou AVS ainda não lançadas.`];
+      }
+
+      return [`Diário ${diario.id}: AV3 obrigatória (nota semestral ${fechamento.notaSemestral}).`];
+    }
+
+    return [];
+  });
+
+  if (pendencias.length > 0) {
+    throw new GradingError(`Fechamento bloqueado. ${pendencias.join(" ")}`, 409);
+  }
+
+  const updates = diarios.map((diario) => {
+    const componenteMatriz = diario.matricula.matrizCurricular.componentes.find(
+      (componente) => componente.disciplinaId === diario.turma.disciplinaId,
+    );
+
+    if (!componenteMatriz) {
+      throw new GradingError("A disciplina desta turma não compõe a matriz curricular vinculada à matrícula.", 400);
+    }
+
+    const fechamento = evaluateFechamento({
+      notaAv: decimalToNumber(diario.notaAv),
+      notaAvs: decimalToNumber(diario.notaAvs),
+      notaAv3: decimalToNumber(diario.notaAv3),
+      totalFaltas: diario.totalFaltas,
+      chTotal: componenteMatriz.chTotal,
+    });
+
+    return {
+      id: diario.id,
+      ...fechamento,
+    };
+  });
+
+  const saved = await closeDiariosAtomically(updates);
+
   return {
-    id: saved.id,
-    notaA1: decimalToNumber(saved.notaA1),
-    notaA2: decimalToNumber(saved.notaA2),
-    notaAF: decimalToNumber(saved.notaAF),
-    notaFinal: decimalToNumber(saved.notaFinal),
-    totalFaltas: saved.totalFaltas,
-    chCumprida: saved.chCumprida,
-    aprovado: saved.aprovado,
+    turmaId,
+    fechados: saved.length,
+    diarios: saved.map(mapAvaliacao),
   };
 };

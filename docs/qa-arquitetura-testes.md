@@ -110,7 +110,7 @@ Rodar seed: `npx prisma db seed --config prisma7.config.ts`.
 | Docente         | `professor@opensga.dev`, CPF `111.111.111-11` ou matrícula `PROF-001` | `Professor@123456` | `PROFESSOR` | Turmas próprias, diário, dashboard, avaliar |
 | Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001`          | `Aluno@123456`     | `ALUNO`     | **Somente** login e `/me`                   |
 
-Dados acadêmicos criados pelo seed: campi `SEDE-REC` (5 cursos PRESENCIAL) e `POLO-EAD` (5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem A1/A2, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`.
+Dados acadêmicos criados pelo seed: campi `SEDE-REC` (5 cursos PRESENCIAL) e `POLO-EAD` (5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem AV/AVS, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`.
 
 Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`getMonth() < 6`), senão `2`. Dashboard e seed usam a mesma regra.
 
@@ -314,20 +314,26 @@ Cenário: Carga horária consistente
 
 ### 8.3 Auditoria MEC
 
-`GET /academic/matrizes/:id/auditoria-mec`
+`GET /academic/matrizes/:id/auditoria` (estrito) e `GET /academic/matrizes/:id/auditoria-mec` (indicador 200).
 
 **Regras.**
 
 - Matriz inexistente → 404.
 - Matriz sem componentes → 400.
-- `percentualExtensao = (Σ chExtensao / Σ chTotal) * 100`.
-- `cumpreRegra10PorcentoExtensao` é `true` se percentual ≥ 10.
-- Também devolve percentuais presencial, síncrono e presencial+síncrono do campus da matriz.
+- Identidade: `chTotal = chPresencial + chSincrona + chAssincrona` em cada componente.
+- Modalidade do curso (Decreto 12.456/2026) aplicada em **cada disciplina**:
+  - PRESENCIAL: presencial ≥ 70% da CH.
+  - SEMIPRESENCIAL: presencial ≥ 30% **e** síncrona ≥ 20%; assíncrona ≤ 50%.
+  - EAD: presencial ≥ 10% **e** síncrona ≥ 10%.
+- Extensão: Σ `chTotal` dos componentes `tipo = EXTENSAO` ≥ 10% da CH da matriz.
+- `GET /auditoria` → 200 se conforme; **409** com payload de violações se inconforme.
+- `GET /auditoria-mec` → sempre 200 (dashboard), com `conformeDecreto12456` e `violacoes[]`.
 
-**CA-MEC-01.** Matriz com extensão ≥ 10% → `cumpreRegra10PorcentoExtensao = true`.  
-**CA-MEC-02.** Matriz com extensão &lt; 10% → `false` (não é erro HTTP; é indicador).  
+**CA-MEC-01.** Matriz com extensão ≥ 10% e disciplinas nos pisos → `GET /auditoria` 200 e `conformeDecreto12456 = true`.  
+**CA-MEC-02.** Matriz com extensão &lt; 10% → `GET /auditoria` 409; `GET /auditoria-mec` 200 com `cumpreRegra10PorcentoExtensao = false`.  
 **CA-MEC-03.** Matriz vazia → 400.  
-**CA-MEC-04.** Id inexistente → 404.
+**CA-MEC-04.** Id inexistente → 404.  
+**CA-MEC-05.** Disciplina EAD com presencial &lt; 10% → 409 em `/auditoria`.
 
 ```gherkin
 @QA-MEC-01
@@ -463,57 +469,69 @@ Cenário: Disciplina estranha à matriz
 
 ### 10.3 Motor de notas (`PATCH /diario/avaliar`)
 
-Entrada: `diarioClasseId` + opcionais `notaA1`, `notaA2`, `notaAF` (0–10), `totalFaltas` (≥ 0). Campos omitidos preservam o valor gravado.
+Entrada: `diarioClasseId` + opcionais `notaAv`, `notaAvs`, `notaAv3` (0–10), `totalFaltas` (≥ 0). Campos omitidos preservam o valor gravado.
 
-Seja `MS = (A1 × 0,4) + (A2 × 0,6)` e `limiteFaltas = floor(chTotal × 0,25)`.
+Seja `NS = MAX(AV, AVS)` (nota nula é ignorada) e `limiteFaltas = floor(chTotal × 0,25)`.
+O PATCH **não** fecha o semestre: persiste lançamento, `notaSemestral` e `habilitaAv3`. `chCumprida` e `statusDisciplina` finais vêm de `POST /diario/fechar-semestre`.
 
-| Condição                                | `aprovado`          | `notaFinal`     | `chCumprida`                 |
-| :-------------------------------------- | :------------------ | :-------------- | :--------------------------- |
-| Falta A1 ou A2                          | `null`              | `null`          | 0                            |
-| A1 e A2 lançadas e faltas > limite      | `false`             | MS              | 0                            |
-| A1 e A2, faltas ok, MS ≥ 6,0            | `true`              | MS              | chTotal                      |
-| A1 e A2, faltas ok, MS &lt; 6,0, sem AF | `null`              | MS              | 0                            |
-| A1 e A2, faltas ok, MS &lt; 6,0, com AF | `(MS + AF) / 2 ≥ 5` | `(MS + AF) / 2` | chTotal se aprovado, senão 0 |
+| Condição no PATCH                         | `notaSemestral` | `habilitaAv3` | `statusDisciplina` |
+| :---------------------------------------- | :-------------- | :------------ | :----------------- |
+| Sem AV e sem AVS                          | `null`          | false         | EM_ABERTO          |
+| NS ≥ 6,0 e faltas ≤ limite                | NS              | false         | EM_ABERTO          |
+| NS &lt; 6,0 e faltas ≤ limite             | NS              | true          | EM_ABERTO          |
+| Faltas > limite                           | NS (se houver)  | false         | EM_ABERTO          |
+| AV3 sem `habilitaAv3`                     | —               | —             | 400                |
+| Semestre já fechado                       | —               | —             | 409                |
 
-**CA-AVA-01.** Professor titular lança A1=7 e A2=7, faltas 0, CH 60 → aprovado true, notaFinal 7, chCumprida 60.  
-**CA-AVA-02.** A1=4, A2=4 (MS=4), faltas 0, sem AF → aprovado null, chCumprida 0.  
-**CA-AVA-03.** Mesmo caso + AF=8 → notaFinal 6, aprovado true, chCumprida 60.  
-**CA-AVA-04.** A1=10, A2=10, faltas > 25% da CH → aprovado false, chCumprida 0.  
+| Condição no POST fechar-semestre          | `statusDisciplina` | `mediaFinal`    | `chCumprida` |
+| :---------------------------------------- | :----------------- | :-------------- | :----------- |
+| Faltas > 25%                              | RF                 | `null`          | 0            |
+| NS ≥ 6,0                                  | APROVADO           | NS              | chTotal      |
+| NS &lt; 6,0 com AV3 e MF ≥ 5,0            | APROVADO           | (NS+AV3)/2      | chTotal      |
+| NS &lt; 6,0 com AV3 e MF &lt; 5,0         | RN                 | (NS+AV3)/2      | 0            |
+| NS &lt; 6,0 sem AV3, ou sem NS            | —                  | —               | 409 atômico  |
+
+**CA-AVA-01.** Titular lança AV=7 e AVS=5, faltas 0 → NS 7, `habilitaAv3` false.  
+**CA-AVA-02.** AV=4 e AVS=5, faltas 0, sem AV3 → NS 5, `habilitaAv3` true.  
+**CA-AVA-03.** Mesmo caso + AV3=7 → PATCH aceita; POST fechar → MF 6, APROVADO, chCumprida = chTotal.  
+**CA-AVA-04.** AV=10, faltas > 25% → PATCH `habilitaAv3` false; POST fechar → RF, chCumprida 0.  
 **CA-AVA-05.** Professor **não** titular → 403.  
 **CA-AVA-06.** ADMIN pode lançar em qualquer turma.  
-**CA-AVA-07.** Notas fora de 0–10 → 400 (validação).
+**CA-AVA-07.** Notas fora de 0–10 → 400.  
+**CA-AVA-08.** POST fechar com aluno ainda sem AV3 obrigatória → 409 e nenhum diário é fechado.
 
 ```gherkin
 @QA-AVA-01
 Cenário: Aprovação direta
   Dado um diário cuja disciplina tem chTotal 60
   E sou o professor titular
-  Quando envio PATCH /diario/avaliar com notaA1 7, notaA2 7, totalFaltas 0
-  Então aprovado é true
-  E notaFinal é 7
-  E chCumprida é 60
+  Quando envio PATCH /diario/avaliar com notaAv 7, notaAvs 5, totalFaltas 0
+  Então notaSemestral é 7
+  E habilitaAv3 é false
+  E statusDisciplina é EM_ABERTO
 
 @QA-AVA-02
-Cenário: Em exame (aguardando AF)
+Cenário: Elegível à AV3
   Dado chTotal 60 e faltas dentro do limite
-  Quando lanço A1 4 e A2 4 sem AF
-  Então a média semestral é 4
-  E aprovado é null
-  E chCumprida é 0
+  Quando lanço AV 4 e AVS 5 sem AV3
+  Então notaSemestral é 5
+  E habilitaAv3 é true
 
 @QA-AVA-03
-Cenário: Aprovado na AF
+Cenário: Aprovado na AV3 após fechamento
   Dado o diário do cenário anterior
-  Quando lanço notaAF 8
-  Então notaFinal é 6
-  E aprovado é true
+  Quando lanço notaAv3 7
+  E envio POST /diario/fechar-semestre da turma
+  Então mediaFinal é 6
+  E statusDisciplina é APROVADO
   E chCumprida é 60
 
 @QA-AVA-04
-Cenário: Reprovação por falta
+Cenário: Reprovação por falta no fechamento
   Dado chTotal 60 (limite 15 faltas)
-  Quando lanço A1 10, A2 10 e totalFaltas 16
-  Então aprovado é false
+  Quando lanço notaAv 10 e totalFaltas 16
+  E fecho o semestre
+  Então statusDisciplina é RF
   E chCumprida é 0
 
 @QA-AVA-05
@@ -540,7 +558,7 @@ Corpo: `matriculasPorStatus[]` (todos os valores de `StatusMatricula`, quantidad
 
 ### Professor — `GET /dashboard/professor`
 
-Corpo: `turmas[]` (`id`, `codigo`, `capacidade`, `quantidadeDiarios`) só das suas; `lancamentosPendentes` = diários das suas turmas do período com `notaA1` ou `notaA2` nulos.
+Corpo: `turmas[]` (`id`, `codigo`, `capacidade`, `quantidadeDiarios`) só das suas; `lancamentosPendentes` = diários das suas turmas do período com `notaSemestral` nula.
 
 **CA-DASH-05.** PROFESSOR 200; ADMIN 403.  
 **CA-DASH-06.** Seed: a turma `CALC1-*` aparece e `lancamentosPendentes ≥ 1` (diário sem notas).
@@ -711,10 +729,10 @@ Cenário: Do campus à aprovação do aluno
   E efetivo matrícula ATIVO na matriz
   E enturmo o aluno
   E o professor lista a turma e o diário
-  E o professor lança A1 7, A2 7, faltas 0
+  E o professor lança AV 7, AVS 7, faltas 0
   Então o diário está aprovado com chCumprida = chTotal
   E GET /dashboard/admin reflete a matrícula ATIVO
-  E GET /dashboard/professor deixa de contar esse diário como pendente após A1 e A2
+  E GET /dashboard/professor deixa de contar esse diário como pendente após AV ou AVS
 ```
 
 **CA-E2E-01.** O fluxo acima completa sem 4xx inesperado.  

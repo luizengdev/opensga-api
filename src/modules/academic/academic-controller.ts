@@ -21,6 +21,8 @@ import {
   AcademicError,
   addComponentToMatriz,
   auditMatrizForMecCompliance,
+  auditMatrizOrThrowConflict,
+  RegulatoryConflictError,
   changeCampus,
   changeComponente,
   changeCurso,
@@ -53,6 +55,10 @@ import {
 } from "./academic-service.js";
 
 const replyWithAcademicError = (error: unknown, reply: FastifyReply, fallback: string) => {
+  if (error instanceof RegulatoryConflictError) {
+    return reply.status(409).send({error: error.message, ...error.auditoria});
+  }
+
   if (error instanceof AcademicError) {
     return reply.status(error.statusCode).send({error: error.message});
   }
@@ -300,6 +306,18 @@ export const deleteComponenteHandler = async (request: FastifyRequest<{Params: {
 export const auditMatrizHandler = async (request: FastifyRequest<{Params: {id: string}}>, reply: FastifyReply) => {
   try {
     const auditoria = await auditMatrizForMecCompliance({matrizCurricularId: request.params.id});
+    return reply.status(200).send(auditoria);
+  } catch (error) {
+    return replyWithAcademicError(error, reply, "Erro ao auditar matriz.");
+  }
+};
+
+export const auditMatrizStrictHandler = async (
+  request: FastifyRequest<{Params: {id: string}}>,
+  reply: FastifyReply,
+) => {
+  try {
+    const auditoria = await auditMatrizOrThrowConflict({matrizCurricularId: request.params.id});
     return reply.status(200).send(auditoria);
   } catch (error) {
     return replyWithAcademicError(error, reply, "Erro ao auditar matriz.");

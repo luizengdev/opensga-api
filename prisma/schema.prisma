@@ -76,6 +76,13 @@ enum TipoEntrega {
   ASSINCRONO_DIGITAL // Conteúdo gravado / AVA tradicional
 }
 
+enum StatusDisciplina {
+  EM_ABERTO
+  APROVADO
+  RF
+  RN
+}
+
 // --- MODELOS DE USUÁRIOS E PERFIS ---
 
 model User {
@@ -263,18 +270,21 @@ model Matricula {
 }
 
 model DiarioClasse {
-  id           String   @id @default(uuid()) @db.Uuid
-  matriculaId  String   @db.Uuid
-  turmaId      String   @db.Uuid
-  notaA1       Decimal? @db.Decimal(4, 2)
-  notaA2       Decimal? @db.Decimal(4, 2)
-  notaAF       Decimal? @db.Decimal(4, 2)
-  notaFinal    Decimal? @db.Decimal(4, 2)
-  totalFaltas  Int      @default(0)
-  chCumprida   Int      @default(0)
-  aprovado     Boolean?
-  criadoEm     DateTime @default(now()) @db.Timestamptz()
-  atualizadoEm DateTime @updatedAt @db.Timestamptz()
+  id               String           @id @default(uuid()) @db.Uuid
+  matriculaId      String           @db.Uuid
+  turmaId          String           @db.Uuid
+  notaAv           Decimal?         @db.Decimal(4, 2)
+  notaAvs          Decimal?         @db.Decimal(4, 2)
+  notaAv3          Decimal?         @db.Decimal(4, 2)
+  notaSemestral    Decimal?         @db.Decimal(4, 2)
+  mediaFinal       Decimal?         @db.Decimal(4, 2)
+  habilitaAv3      Boolean          @default(false)
+  totalFaltas      Int              @default(0)
+  chCumprida       Int              @default(0)
+  statusDisciplina StatusDisciplina @default(EM_ABERTO)
+  semestreFechado  Boolean          @default(false)
+  criadoEm         DateTime         @default(now()) @db.Timestamptz()
+  atualizadoEm     DateTime         @updatedAt @db.Timestamptz()
 
   matricula Matricula @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
   turma     Turma     @relation(fields: [turmaId], references: [id], onDelete: Cascade)

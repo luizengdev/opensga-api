@@ -1,5 +1,7 @@
 import {z} from "zod";
 
+import {StatusDisciplina} from "../../generated/prisma/enums.js";
+
 export const enrollInTurmaSchema = z.object({
   matriculaId: z.uuid(),
   turmaId: z.uuid(),
@@ -7,10 +9,14 @@ export const enrollInTurmaSchema = z.object({
 
 export const updateGradesSchema = z.object({
   diarioClasseId: z.uuid(),
-  notaA1: z.number().min(0).max(10).optional(),
-  notaA2: z.number().min(0).max(10).optional(),
-  notaAF: z.number().min(0).max(10).optional(),
+  notaAv: z.number().min(0).max(10).optional(),
+  notaAvs: z.number().min(0).max(10).optional(),
+  notaAv3: z.number().min(0).max(10).optional(),
   totalFaltas: z.number().int().min(0).optional(),
+});
+
+export const fecharSemestreSchema = z.object({
+  turmaId: z.uuid(),
 });
 
 const notaSchema = z.number().min(0).max(10).nullable();
@@ -37,13 +43,16 @@ export const enturmacaoResponseSchema = z.object({
 
 export const avaliacaoResponseSchema = z.object({
   id: z.uuid(),
-  notaA1: notaSchema,
-  notaA2: notaSchema,
-  notaAF: notaSchema,
-  notaFinal: notaSchema,
+  notaAv: notaSchema,
+  notaAvs: notaSchema,
+  notaAv3: notaSchema,
+  notaSemestral: notaSchema,
+  mediaFinal: notaSchema,
+  habilitaAv3: z.boolean(),
   totalFaltas: z.number().int(),
   chCumprida: z.number().int(),
-  aprovado: z.boolean().nullable(),
+  statusDisciplina: z.enum(StatusDisciplina),
+  semestreFechado: z.boolean(),
 });
 
 export const idParamsSchema = z.object({
@@ -63,13 +72,16 @@ export const diarioResponseSchema = z.object({
   id: z.uuid(),
   matriculaId: z.uuid(),
   turmaId: z.uuid(),
-  notaA1: notaSchema,
-  notaA2: notaSchema,
-  notaAF: notaSchema,
-  notaFinal: notaSchema,
+  notaAv: notaSchema,
+  notaAvs: notaSchema,
+  notaAv3: notaSchema,
+  notaSemestral: notaSchema,
+  mediaFinal: notaSchema,
+  habilitaAv3: z.boolean(),
   totalFaltas: z.number().int(),
   chCumprida: z.number().int(),
-  aprovado: z.boolean().nullable(),
+  statusDisciplina: z.enum(StatusDisciplina),
+  semestreFechado: z.boolean(),
   turma: z.object({
     id: z.uuid(),
     codigo: z.string(),
@@ -87,8 +99,16 @@ export const diarioResponseSchema = z.object({
 
 export const diarioListResponseSchema = z.array(diarioResponseSchema);
 
+export const fecharSemestreResponseSchema = z.object({
+  turmaId: z.uuid(),
+  fechados: z.number().int(),
+  diarios: z.array(avaliacaoResponseSchema),
+});
+
 export type IEnrollInTurmaInput = z.infer<typeof enrollInTurmaSchema>;
 export type IUpdateGradesInput = z.infer<typeof updateGradesSchema>;
+export type IFecharSemestreInput = z.infer<typeof fecharSemestreSchema>;
 export type IAvaliacaoOutput = z.infer<typeof avaliacaoResponseSchema>;
 export type IListDiariosQuery = z.infer<typeof listDiariosQuerySchema>;
 export type IDiarioOutput = z.infer<typeof diarioResponseSchema>;
+export type IFecharSemestreOutput = z.infer<typeof fecharSemestreResponseSchema>;

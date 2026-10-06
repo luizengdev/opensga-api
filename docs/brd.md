@@ -52,7 +52,7 @@ Instituições de ensino superior frequentemente enfrentam gargalos críticos de
   Responsável pela parametrização da infraestrutura multicampus, cadastro de usuários e professores, desenho de cursos, versionamento de matrizes curriculares, cadastramento de componentes, auditoria de indicadores MEC, abertura de turmas, efetivação de matrículas, emissão de faturas, comunicados institucionais e condução da ouvidoria.
 
 - **Professor (`PROFESSOR`) — Corpo Docente**  
-  Responsável pela gestão do diário de classe das turmas sob sua regência, registro de assiduidade (faltas) e lançamento das avaliações semestrais (A1, A2 e Avaliação Final — AF).
+  Responsável pela gestão do diário de classe das turmas sob sua regência, registro de assiduidade (faltas) e lançamento das avaliações semestrais (AV, AVS e AV3).
 
 - **Aluno (`ALUNO`) — Estudante / Discente**  
   Titular do vínculo acadêmico, identificado pelo Registro Acadêmico (RA). Consulta histórico escolar, frequenta as disciplinas da grade, acompanha sua evolução no curso e acessa as faturas financeiras emitidas.
@@ -95,7 +95,7 @@ O sistema é subdividido em domínios de negócio delimitados, operando sob regr
 - **Classificação Curricular dos Componentes**: Categorização conforme projeto pedagógico em disciplinas de núcleo comum (*Vida & Carreira*), núcleo técnico específico (*Específico*), trilhas de formação flexível (*Eletivas*), disciplinas livres (*Optativas*) e atividades práticas de impacto social (*Extensão*).
 - **Auditoria Automatizada de Conformidade MEC**:
   - *Curricularização da Extensão (Resolução CNE/CES nº 7/2018)*: O sistema calcula a razão da carga horária de extensão em relação à carga horária total da matriz. Matrizes com índice inferior a 10% recebem indicador explícito de não conformidade legal.
-  - *Balanço Presencial e Síncrono*: Medição percentual instantânea de horas presenciais e mediadas por polo/campus, respaldando a conformidade regulatória para cursos presenciais, semipresenciais ou EAD.
+  - *Balanço Presencial e Síncrono (Decreto nº 12.456/2026)*: cada disciplina deve cumprir `CH_Total = CH_Presencial + CH_Síncrona + CH_Assíncrona` e os pisos da modalidade do curso (Presencial ≥ 70% presencial; Semipresencial ≥ 30% presencial e ≥ 20% síncrono, com teto de 50% assíncrono; EAD ≥ 10% presencial e ≥ 10% síncrono). A auditoria estrita (`GET /academic/matrizes/:id/auditoria`) responde HTTP 409 em conflito regulatório.
 
 ### 2.3 Ingresso, Matrículas e Onboarding Discente
 
@@ -120,12 +120,16 @@ O sistema é subdividido em domínios de negócio delimitados, operando sob regr
   - A assiduidade é acompanhada pelo total acumulado de faltas.
   - *Teto Regulatório de 25%*: Se o total de faltas do estudante exceder 25% da carga horária total da disciplina, ocorre reprovação direta por faltas, independentemente de sua pontuação nas avaliações.
 - **Motor de Avaliação e Médias**:
-  - A pontuação semestral é balizada por duas avaliações regulares com pesos ponderados:  
-    **Média Semestral = (A1 × 0,4) + (A2 × 0,6)**
-  - *Aprovação Direta*: Caso a Média Semestral seja igual ou superior a 6,0 e a frequência esteja dentro do limite, o estudante é considerado aprovado.
-  - *Avaliação Final (AF)*: Se a Média Semestral for inferior a 6,0 (e o aluno não tiver sido reprovado por faltas), habilita-se a Avaliação Final.  
-    **Média Final = (Média Semestral + AF) / 2**  
-    O aluno é aprovado se a Média Final resultar em nota igual ou superior a 5,0.
+  - A pontuação semestral usa a maior nota entre a avaliação regular (AV) e a substitutiva (AVS):  
+    **Nota Semestral = MAX(AV, AVS)**
+  - *Aprovação Direta*: Caso a Nota Semestral seja igual ou superior a 6,0 e a frequência esteja dentro do limite, o estudante é aprovado no fechamento do semestre.
+  - *AV3 (Recuperação Final)*: Se a Nota Semestral for inferior a 6,0 (e o aluno não tiver sido reprovado por faltas), habilita-se a AV3.  
+    **Média Final = (Nota Semestral + AV3) / 2**  
+    Aprovado se a Média Final ≥ 5,0; caso contrário, status `RN`.
+
+  - *Contrato de lançamento (`PATCH /diario/avaliar`)*: body `{ diarioClasseId, notaAv?, notaAvs?, notaAv3?, totalFaltas? }`. Campos omitidos preservam o valor gravado. Recalcula `notaSemestral` e `habilitaAv3` (frequência regular e NS < 6,0). Não creditada CH. AV3 sem a flag → 400. Semestre já fechado → 409. Status permanece `EM_ABERTO` até o fechamento.
+  - *Contrato de fechamento (`POST /diario/fechar-semestre`)*: body `{ turmaId }`. Transação atômica: (1) faltas > 25% da CH → `RF`, `chCumprida = 0`; (2) NS ≥ 6,0 → `APROVADO` e CH creditada; (3) senão `MF = (NS + AV3) / 2` (≥ 5,0 `APROVADO`, < 5,0 `RN`); (4) NS ausente ou AV3 obrigatória faltando → 409 e nenhum diário é persistido. Resposta: `{ turmaId, fechados, diarios }`.
+  - *Auditoria da matriz*: `GET /academic/matrizes/:id/auditoria` responde 200 se conforme ao Decreto nº 12.456/2026 e à extensão ≥ 10%; 409 com `violacoes[]` se inconforme. `GET /academic/matrizes/:id/auditoria-mec` permanece 200 (dashboard).
 - **Integralização Curricular Condicionada**: A carga horária cumprida da disciplina só é creditada como progresso no histórico escolar do aluno quando a aprovação for efetivamente confirmada. Em caso de reprovação, a carga horária cumprida é registrada como zero.
 - **Governança de Lançamento por Turma**: Docentes só possuem permissão para lançar faltas e notas nas turmas sob sua estrita responsabilidade acadêmica. Administradores possuem visão de auditoria e intervenção institucional.
 
@@ -144,7 +148,7 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 | Identidade | Login unificado, `GET /auth/me` (ids de aluno/professor e `ativo`) e `PATCH /auth/senha`. CRUD de usuários, professores e administradores; consulta de alunos e responsáveis (`/users`). JWT de conta inativa é recusado. |
 | Currículo | CRUD de campus, curso, disciplina, matriz, componente e turma (`/academic`). Auditoria MEC da matriz. Professor lista/consulta apenas as próprias turmas. |
 | Matrícula | Efetivação, consulta por status, alteração de status e exclusão do vínculo (`/matriculas`). O aluno não é apagado junto com a matrícula. |
-| Diário | Enturmação ADMIN; listagem/consulta ADMIN+PROFESSOR (filtro JWT); desenturmação ADMIN; lançamento de notas/faltas pelo titular (`PATCH /diario/avaliar`). |
+| Diário | Enturmação ADMIN; listagem/consulta ADMIN+PROFESSOR (filtro JWT); desenturmação ADMIN; lançamento AV/AVS/AV3 pelo titular (`PATCH /diario/avaliar`); fechamento atômico (`POST /diario/fechar-semestre`). |
 | Dashboards | `GET /dashboard/admin` e `GET /dashboard/professor` com KPIs do período letivo. |
 | Financeiro | Precificação por curso (`/financeiro/precos`, ADMIN): o valor é cadastrado no OpenSGA e sincronizado como Product/Price no Stripe. Emissão de faturas (`/financeiro/faturas`). Inscrição/checkout (`POST /api/inscricao`, `POST /api/checkout`) só abrem o Stripe se o valor devido agora for maior que zero; isenção (cupom 100% na 1ª parcela) conclui em `PRE_MATRICULADO` sem cartão e agenda fatura `PENDENTE` no ciclo seguinte. Quando há cobrança, o Checkout oferece cartão e boleto (voucher em 3 dias). Webhook `POST /webhooks/stripe` ativa matrícula em `checkout.session.completed` só se `payment_status=paid` (cartão) ou em `checkout.session.async_payment_succeeded` (boleto); boleto gerado (`completed` + `unpaid`) e `async_payment_failed` não efetivam a vaga. Também concilia `invoice.payment_succeeded` e `invoice.payment_failed`. |
 | Comunicação | CRUD de comunicados por público-alvo (`/comunicados`) e fluxo de ouvidoria: abrir, responder, fechar e excluir (`/ouvidoria/reclamacoes`). |
@@ -244,29 +248,32 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 [Semestre Letivo em Andamento: Professor registra Faltas e Avaliações no Diário]
        │
        ▼
-[Lançamento das notas A1 e A2 pelo Professor Titular da Turma]
+[Lançamento de AV e AVS pelo Professor Titular]
        │
        ▼
-[Sistema calcula automaticamente a Média Semestral e avalia Assiduidade]
+[Sistema calcula Nota Semestral = MAX(AV, AVS) e habilitaAv3]
+       │
+       ▼
+[POST /diario/fechar-semestre — atômico por turma]
        │
        ├── Total de Faltas > 25% da CH Total?
-       │      └── SIM  -> Reprovado por Falta (RF) | CH Cumprida = 0h
+       │      └── SIM  -> Status RF | CH Cumprida = 0h (ignora notas)
        │
        └── Frequência Regular (Faltas <= 25%):
               │
-              ├── Média Semestral >= 6,0?
-              │      └── SIM  -> Aprovado Direto | CH Cumprida = CH Total
+              ├── Nota Semestral >= 6,0?
+              │      └── SIM  -> APROVADO | CH Cumprida = CH Total
               │
-              └── Média Semestral < 6,0:
+              └── Nota Semestral < 6,0:
                      │
                      ▼
-              [Aluno realiza Avaliação Final (AF)]
+              [Aluno realiza AV3]
                      │
                      ▼
-              [Média Final = (Média Semestral + AF) / 2]
+              [Média Final = (Nota Semestral + AV3) / 2]
                      │
-                     ├── Média Final >= 5,0 -> Aprovado em Exame | CH Cumprida = CH Total
-                     └── Média Final < 5,0  -> Reprovado por Nota | CH Cumprida = 0h
+                     ├── Média Final >= 5,0 -> APROVADO | CH Cumprida = CH Total
+                     └── Média Final < 5,0  -> RN | CH Cumprida = 0h
 ```
 
 ---
@@ -314,8 +321,9 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 
 ## 5. Glossário de Termos de Negócio
 
-- **A1 e A2 (Avaliações Regulares Semestrais)**: Instrumentos avaliativos de peso 40% e 60%, respectivamente, aplicados ao longo do semestre letivo para mensurar o aprendizado discente.
-- **AF (Avaliação Final)**: Exame de recuperação concedido exclusivamente a estudantes que não alcançaram a média mínima semestral (6,0), desde que não tenham sido reprovados por limite de faltas.
+- **AV (Avaliação Regular)**: Instrumento avaliativo principal do semestre (escala 0,0 a 10,0).
+- **AVS (Avaliação Substitutiva)**: Segunda chance semestral. A nota semestral é o maior valor entre AV e AVS.
+- **AV3 (Recuperação Final)**: Exame habilitado apenas se a nota semestral for inferior a 6,0 e a frequência for regular. Média final = (NS + AV3) / 2, corte em 5,0.
 - **Aluno**: Pessoa física com matrícula ativa ou com histórico curricular em um dos cursos da instituição.
 - **Assiduidade**: Índice de comparecimento do estudante às aulas da disciplina. O descumprimento de mais de 25% da carga horária gera reprovação sumária por infrequência.
 - **Campus / Polo**: Unidade física ou sede regional onde as atividades letivas e administrativas ocorrem, identificado formalmente por seu Código de Polo perante os cadastros do MEC.

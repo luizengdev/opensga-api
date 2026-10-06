@@ -3,6 +3,7 @@ import {ZodTypeProvider} from "fastify-type-provider-zod";
 
 import {Role} from "../../generated/prisma/enums.js";
 import {
+  closeSemesterHandler,
   deleteDiarioHandler,
   enrollInTurmaHandler,
   getDiarioHandler,
@@ -17,6 +18,8 @@ import {
   enrollInTurmaSchema,
   enturmacaoResponseSchema,
   errorResponseSchema,
+  fecharSemestreResponseSchema,
+  fecharSemestreSchema,
   idParamsSchema,
   listDiariosQuerySchema,
   updateGradesSchema,
@@ -116,7 +119,7 @@ export const gradingRoutes = async (app: FastifyInstance): Promise<void> => {
       preHandler: [app.authorize([Role.ADMIN, Role.PROFESSOR])],
       schema: {
         tags: ["Acadêmico - Diário"],
-        summary: "Lançar A1, A2, AF e faltas com recálculo de aprovação e integralização",
+        summary: "Lançar AV, AVS, AV3 e faltas com recálculo da nota semestral e da flag habilitaAv3",
         security: [{bearerAuth: []}],
         body: updateGradesSchema,
         response: {
@@ -125,9 +128,33 @@ export const gradingRoutes = async (app: FastifyInstance): Promise<void> => {
           401: errorResponseSchema,
           403: errorResponseSchema,
           404: errorResponseSchema,
+          409: errorResponseSchema,
         },
       },
     },
     updateGradesHandler,
+  );
+
+  typedApp.post(
+    "/diario/fechar-semestre",
+    {
+      onRequest: [app.authenticate],
+      preHandler: [app.authorize([Role.ADMIN, Role.PROFESSOR])],
+      schema: {
+        tags: ["Acadêmico - Diário"],
+        summary: "Fechar o semestre da turma: RF soberano, média final e integralização de CH",
+        security: [{bearerAuth: []}],
+        body: fecharSemestreSchema,
+        response: {
+          200: fecharSemestreResponseSchema,
+          400: errorResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+          409: errorResponseSchema,
+        },
+      },
+    },
+    closeSemesterHandler,
   );
 };

@@ -73,7 +73,7 @@ opensga-api/
     │   ├── users/                  # Professores, Alunos, Responsáveis e Admins
     │   ├── academic/               # Campus, Cursos, Disciplinas, Matrizes, Componentes, Turmas
     │   ├── enrollment/             # Matrícula, RA e ciclo de status
-    │   ├── grading/                # Diário de Classe, Notas (A1, A2, AF) e Faltas
+    │   ├── grading/                # Diário de Classe, Notas (AV, AVS, AV3) e Faltas
     │   ├── financial/              # Faturas acadêmicas, Checkout de matrícula e webhooks Stripe
     │   ├── communications/         # Comunicados institucionais e ouvidoria
     │   └── dashboard/              # KPIs leves ADMIN e PROFESSOR
@@ -88,7 +88,7 @@ Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 - `/users` — usuários, professores, alunos e responsáveis (`ADMIN`)
 - `/academic` — campi, cursos, disciplinas, matrizes, componentes (`ADMIN`); GET turmas também `PROFESSOR` (só as suas)
 - `/matriculas` — vínculo acadêmico (`ADMIN`)
-- `/diario` — enturmação `ADMIN`; GET lista/id `ADMIN`+`PROFESSOR` (professor filtrado pelo JWT); `PATCH /diario/avaliar` `ADMIN`+`PROFESSOR` titular
+- `/diario` — enturmação `ADMIN`; GET lista/id `ADMIN`+`PROFESSOR` (professor filtrado pelo JWT); `PATCH /diario/avaliar` e `POST /diario/fechar-semestre` `ADMIN`+`PROFESSOR` titular
 - `/financeiro/precos` — precificação por curso/modalidade (`ADMIN`); sync Stripe Product/Price
 - `/financeiro/faturas` — contas a receber (`ADMIN`)
 - `GET /api/catalogo` e `GET /api/v1/catalogo` — catálogo público de cursos com preço ativo
@@ -112,7 +112,7 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 - `onRequest` roda antes de `preHandler`, então a autorização só executa depois do JWT válido e da conta ativa.
 - `GET /auth/me` devolve `ativo`, `aluno.{id, ra}` e `professor.{id, matricula, titulacao}` (nullable). Não omitir esses campos.
 - `PATCH /auth/senha` (senha atual + nova) é o fluxo de primeiro acesso prometido no e-mail de matrícula.
-- Leituras por papel: **não duplicar CRUD**. Reutilizar o GET ADMIN e filtrar no service pelo JWT (`professor.userId = request.user.sub`); POST/PATCH/DELETE acadêmicos continuam `ADMIN`. Professor titular já é validado em `PATCH /diario/avaliar`.
+- Leituras por papel: **não duplicar CRUD**. Reutilizar o GET ADMIN e filtrar no service pelo JWT (`professor.userId = request.user.sub`); POST/PATCH/DELETE acadêmicos continuam `ADMIN`. Professor titular já é validado em `PATCH /diario/avaliar` e `POST /diario/fechar-semestre`.
 - Erros HTTP: `setErrorHandler` em `src/index.ts` responde `{ error, message? }`. Erros de domínio nos services usam a mesma forma. Não devolver o payload padrão do Fastify/Zod cru.
 
 ### Código Compartilhado
@@ -171,15 +171,22 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 ### B. Conformidade Regulatória MEC
 
-- **Curricularização da Extensão (Resolução CNE/CES 7/2018)**: $\sum \text{chExtensao} \ge 10\% \text{ da } \sum \text{chTotal}$ da matriz curricular.
-- **Marco Regulatório EAD**: Controle de percentual presencial e síncrono por polo/campus.
+- **Curricularização da Extensão (Resolução CNE/CES 7/2018)**: soma da `chTotal` dos componentes `tipo = EXTENSAO` ≥ 10% da CH da matriz. `GET /academic/matrizes/:id/auditoria` responde **409** se ficar abaixo.
+- **Multimodalidade (Decreto nº 12.456/2026)**: em cada disciplina, `chTotal = chPresencial + chSincrona + chAssincrona`.
+  - PRESENCIAL: presencial ≥ 70% da CH.
+  - SEMIPRESENCIAL: presencial ≥ 30% **e** síncrona ≥ 20%; assíncrona ≤ 50%.
+  - EAD: presencial ≥ 10% **e** síncrona ≥ 10%.
+- `GET /academic/matrizes/:id/auditoria` é a auditoria estrita (200 conforme / 409 com `violacoes[]`). `GET /academic/matrizes/:id/auditoria-mec` permanece 200 para o dashboard, com os mesmos indicadores.
 
 ### C. Avaliação e Rendimento Acadêmico
 
-- **Fórmula Padrão Semestral**: $\text{Média Semestral} = (A1 \times 0.4) + (A2 \times 0.6)$.
-- **Aprovação Direta**: $\text{Média Semestral} \ge 6.0$ e $\text{Faltas} \le 25\%$ da `chTotal`.
-- **Avaliação Final (AF)**: Se $\text{Média Semestral} < 6.0$, aplica-se AF. Média Final $= (\text{Média Semestral} + AF) / 2$. Aprovado se $\ge 5.0$.
-- **Integralização**: A `chCumprida` da disciplina só é creditada no histórico do aluno se `aprovado = true`.
+- **Nota semestral**: $\text{NS} = \max(AV, AVS)$ (nulos ignorados). Escala 0,0–10,0.
+- **PATCH `/diario/avaliar`**: body `{ diarioClasseId, notaAv?, notaAvs?, notaAv3?, totalFaltas? }`. Campos omitidos preservam o valor. Recalcula `notaSemestral` e `habilitaAv3` (`true` se frequência regular e NS < 6,0). Não integraliza CH. AV3 sem flag → 400. Semestre já fechado → 409. Resposta inclui `statusDisciplina` (`EM_ABERTO` | `APROVADO` | `RF` | `RN`) e `semestreFechado`.
+- **Aprovação direta** (no fechamento): NS ≥ 6,0 e faltas ≤ 25% da `chTotal`.
+- **AV3**: se NS < 6,0 e frequência regular, `MF = (NS + AV3) / 2`. Aprovado se MF ≥ 5,0; senão `RN`.
+- **RF soberano**: faltas > 25% da CH → `RF`, `chCumprida = 0`, ignora notas.
+- **POST `/diario/fechar-semestre`**: body `{ turmaId }`. Transação atômica na turma: (1) RF; (2) NS ≥ 6 → APROVADO + CH; (3) MF com AV3; (4) NS ausente ou AV3 obrigatória faltando → 409 e **nenhum** diário é persistido. `chCumprida` só entra no histórico se `statusDisciplina = APROVADO`.
+- Professor titular é validado em `PATCH /diario/avaliar` e `POST /diario/fechar-semestre`.
 
 ### D. Integridade referencial e exclusão ADMIN
 
@@ -193,7 +200,7 @@ Definir `onDelete` explicitamente no Prisma. Antes de `delete`, o service conta 
 ### E. Dashboards internos
 
 - `GET /dashboard/admin`: matrículas por status, turmas do período, ocupação média, faturas `PENDENTE`, reclamações `ABERTO`.
-- `GET /dashboard/professor`: turmas do período com `quantidadeDiarios`/`capacidade` e contagem de diários sem A1 ou A2.
+- `GET /dashboard/professor`: turmas do período com `quantidadeDiarios`/`capacidade` e contagem de diários sem nota semestral (AV/AVS).
 - Período padrão: ano corrente e semestre `1` de janeiro a junho, `2` no restante do ano. Aceitar query `anoLetivo` e `semestreLetivo`.
 - Seed de demo (`prisma/seed.ts`): admin, campi `SEDE-REC` e `POLO-EAD`, 5 cursos PRESENCIAL e 5 EAD (matriz 2026.1 com extensão ≥ 10%, 1 professor e 2 alunos cada, turma do período corrente, diários, faturas). Personas canônicas: `professor@opensga.dev` e `aluno@opensga.dev`. `PrecoCurso` via Stripe quando `STRIPE_SECRET_KEY` existir. Rodar `npx prisma db seed --config prisma7.config.ts`.
 
@@ -220,7 +227,7 @@ Ao implementar código neste projeto:
 3. Valide todas as entradas de rotas Fastify com schemas Zod tipados via `withTypeProvider<ZodTypeProvider>()`.
 4. Respeite todas as regras de sintaxe Zod 4 e convenções TypeScript listadas neste documento.
 5. Autenticação e RBAC ficam no plugin `src/plugins/authenticate.ts`. Proteja rotas com `onRequest` / `preHandler`. Não crie middlewares Express.
-6. Para o professor, abra só GET (e o avaliar já existente). Filtre pelo JWT; 403 se acessar turma/diário de outro docente.
+6. Para o professor, abra só GET, `PATCH /diario/avaliar` e `POST /diario/fechar-semestre` (titular). Filtre pelo JWT; 403 se acessar turma/diário de outro docente.
 7. Stripe: SDK apenas em `src/lib/stripe.ts`. Precificação ADMIN em `/financeiro/precos` (valor em reais). Checkout e webhook conforme a seção 6.F. Webhook em plugin encapsulado com parser `Buffer` — não reutilizar o JSON parser global.
 
 ## 8. Git

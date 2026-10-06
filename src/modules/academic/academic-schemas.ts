@@ -199,23 +199,39 @@ export const componenteResponseSchema = z.object({
 
 export const componenteListResponseSchema = z.array(componenteResponseSchema);
 
+export const violacaoRegulatoriaSchema = z.object({
+  codigo: z.enum(["IDENTIDADE_CH", "MODALIDADE_DISCIPLINA", "EXTENSAO_10"]),
+  mensagem: z.string(),
+  disciplinaId: z.uuid().optional(),
+});
+
 export const auditoriaMecResponseSchema = z.object({
   matrizId: z.uuid(),
   matrizNome: z.string(),
   cursoNome: z.string(),
+  modalidadeCurso: z.enum(ModalidadeCurso),
   campusId: z.uuid(),
   campusNome: z.string(),
   codigoPolo: z.string(),
   chTotalGeral: z.number().int(),
   chExtensaoTotal: z.number().int(),
+  chExtensaoPorTipo: z.number().int(),
   percentualExtensao: z.number(),
   cumpreRegra10PorcentoExtensao: z.boolean(),
   chPresencialTotal: z.number().int(),
   percentualPresencial: z.number(),
   chSincronaTotal: z.number().int(),
   percentualSincrono: z.number(),
+  chAssincronaTotal: z.number().int(),
+  percentualAssincrono: z.number(),
   percentualPresencialESincrono: z.number(),
   quantidadeComponentes: z.number().int(),
+  conformeDecreto12456: z.boolean(),
+  violacoes: z.array(violacaoRegulatoriaSchema),
+});
+
+export const auditoriaConflitoResponseSchema = auditoriaMecResponseSchema.extend({
+  error: z.string(),
 });
 
 const professorResumoSchema = z.object({
