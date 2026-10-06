@@ -5,6 +5,7 @@ import {Role} from "../../generated/prisma/enums.js";
 import {
   addComponenteHandler,
   auditMatrizHandler,
+  auditMatrizStrictHandler,
   createCampusHandler,
   createCursoHandler,
   createDisciplinaHandler,
@@ -37,6 +38,7 @@ import {
 } from "./academic-controller.js";
 import {
   addComponenteMatrizSchema,
+  auditoriaConflitoResponseSchema,
   auditoriaMecResponseSchema,
   campusListResponseSchema,
   campusResponseSchema,
@@ -446,6 +448,28 @@ export const academicRoutes = async (app: FastifyInstance): Promise<void> => {
       },
     },
     addComponenteHandler,
+  );
+
+  typedApp.get(
+    "/academic/matrizes/:id/auditoria",
+    {
+      ...acessoAdmin,
+      schema: {
+        tags: ["Acadêmico - Regulatório"],
+        summary: "Validar Decreto 12.456/2026 e extensão curricular; 409 em conflito regulatório",
+        security: [{bearerAuth: []}],
+        params: matrizIdParamsSchema,
+        response: {
+          200: auditoriaMecResponseSchema,
+          400: errorResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+          409: auditoriaConflitoResponseSchema,
+        },
+      },
+    },
+    auditMatrizStrictHandler,
   );
 
   typedApp.get(

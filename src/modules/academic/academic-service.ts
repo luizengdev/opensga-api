@@ -37,6 +37,7 @@ import {
   updateMatrizById,
   updateTurmaById,
 } from "./academic-repository.js";
+import {collectViolacoesMatriz} from "./mec-2026.js";
 import type {
   IAddComponenteMatrizInput,
   IAuditoriaMecOutput,
@@ -394,6 +395,19 @@ export const removeComponente = async (id: string) => {
   return deleted;
 };
 
+export class RegulatoryConflictError extends AcademicError {
+  readonly auditoria: IAuditoriaMecOutput;
+
+  constructor(auditoria: IAuditoriaMecOutput) {
+    super(
+      "Conflito regulatório: a matriz não cumpre o Decreto nº 12.456/2026 e/ou a curricularização da extensão (CNE/CES 7/2018).",
+      409,
+    );
+    this.name = "RegulatoryConflictError";
+    this.auditoria = auditoria;
+  }
+}
+
 export const auditMatrizForMecCompliance = async ({
   matrizCurricularId,
 }: {
@@ -415,30 +429,50 @@ export const auditMatrizForMecCompliance = async ({
       chExtensao: acc.chExtensao + componente.chExtensao,
       chPresencial: acc.chPresencial + componente.chPresencial,
       chSincrona: acc.chSincrona + componente.chSincrona,
+      chAssincrona: acc.chAssincrona + componente.chAssincrona,
     }),
-    {chTotal: 0, chExtensao: 0, chPresencial: 0, chSincrona: 0},
+    {chTotal: 0, chExtensao: 0, chPresencial: 0, chSincrona: 0, chAssincrona: 0},
   );
 
-  const razaoExtensao = totais.chTotal > 0 ? (totais.chExtensao / totais.chTotal) * 100 : 0;
+  const {violacoes, chExtensaoPorTipo, percentualExtensao} = collectViolacoesMatriz({
+    modalidade: matriz.curso.modalidade,
+    componentes: matriz.componentes,
+  });
 
   return {
     matrizId: matriz.id,
     matrizNome: matriz.nome,
     cursoNome: matriz.curso.nome,
+    modalidadeCurso: matriz.curso.modalidade,
     campusId: matriz.curso.campus.id,
     campusNome: matriz.curso.campus.nome,
     codigoPolo: matriz.curso.campus.codigoPolo,
     chTotalGeral: totais.chTotal,
     chExtensaoTotal: totais.chExtensao,
-    percentualExtensao: Number(razaoExtensao.toFixed(2)),
-    cumpreRegra10PorcentoExtensao: razaoExtensao >= 10,
+    chExtensaoPorTipo,
+    percentualExtensao,
+    cumpreRegra10PorcentoExtensao: percentualExtensao >= 10,
     chPresencialTotal: totais.chPresencial,
     percentualPresencial: percentualDe(totais.chPresencial, totais.chTotal),
     chSincronaTotal: totais.chSincrona,
     percentualSincrono: percentualDe(totais.chSincrona, totais.chTotal),
+    chAssincronaTotal: totais.chAssincrona,
+    percentualAssincrono: percentualDe(totais.chAssincrona, totais.chTotal),
     percentualPresencialESincrono: percentualDe(totais.chPresencial + totais.chSincrona, totais.chTotal),
     quantidadeComponentes: matriz.componentes.length,
+    conformeDecreto12456: violacoes.length === 0,
+    violacoes,
   };
+};
+
+export const auditMatrizOrThrowConflict = async ({matrizCurricularId}: {matrizCurricularId: string}) => {
+  const auditoria = await auditMatrizForMecCompliance({matrizCurricularId});
+
+  if (!auditoria.conformeDecreto12456) {
+    throw new RegulatoryConflictError(auditoria);
+  }
+
+  return auditoria;
 };
 
 export const createNewTurma = async (input: ICreateTurmaInput) => {

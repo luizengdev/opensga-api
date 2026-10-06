@@ -294,15 +294,19 @@ export const findMatrizWithComponentes = async ({matrizCurricularId}: {matrizCur
       curso: {
         select: {
           nome: true,
+          modalidade: true,
           campus: {select: {id: true, nome: true, codigoPolo: true}},
         },
       },
       componentes: {
         select: {
+          disciplinaId: true,
+          tipo: true,
           chTotal: true,
           chExtensao: true,
           chPresencial: true,
           chSincrona: true,
+          chAssincrona: true,
         },
       },
     },
