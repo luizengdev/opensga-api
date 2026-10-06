@@ -37,11 +37,15 @@ export const communicationsRoutes = async (app: FastifyInstance): Promise<void> 
     onRequest: [app.authenticate],
     preHandler: [app.authorize([Role.ADMIN])],
   };
+  const acessoLeitura = {
+    onRequest: [app.authenticate],
+    preHandler: [app.authorize([Role.ADMIN, Role.PROFESSOR])],
+  };
 
   typedApp.get(
     "/comunicados",
     {
-      ...acessoAdmin,
+      ...acessoLeitura,
       schema: {
         tags: ["Comunicados"],
         summary: "Listar comunicados, com filtro opcional por público-alvo",
@@ -80,7 +84,7 @@ export const communicationsRoutes = async (app: FastifyInstance): Promise<void> 
   typedApp.get(
     "/comunicados/:id",
     {
-      ...acessoAdmin,
+      ...acessoLeitura,
       schema: {
         tags: ["Comunicados"],
         summary: "Buscar comunicado por id",

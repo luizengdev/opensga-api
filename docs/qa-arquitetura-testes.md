@@ -123,7 +123,9 @@ Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`get
 | `GET /health`                                                                        |   sim   |   —   |         —          |   —   |
 | `POST /auth/login`                                                                   |   sim   |   —   |         —          |   —   |
 | `GET /auth/me`, `PATCH /auth/senha`                                                  |         |  sim  |        sim         |  sim  |
-| CRUD users, academic (exceto GET turma), matriculas, faturas, comunicados, ouvidoria |         |  sim  |        403         |  403  |
+| CRUD users, academic (exceto GET turma), matriculas, faturas, ouvidoria              |         |  sim  |        403         |  403  |
+| `GET /comunicados`                                                                   |         | todas | só o seu papel     |  403  |
+| POST/PATCH/DELETE `/comunicados`                                                     |         |  sim  |        403         |  403  |
 | `GET /academic/turmas`, `GET /academic/turmas/:id`                                   |         | todas |     só as suas     |  403  |
 | `GET /diario`, `GET /diario/:id`                                                     |         | todos | só das suas turmas |  403  |
 | `POST /diario/enturmar`, `DELETE /diario/:id`                                        |         |  sim  |        403         |  403  |
@@ -671,11 +673,24 @@ Cenário: Boleto só efetiva a matrícula depois do pagamento
 
 ## 13. Comunicados e ouvidoria
 
-### Comunicados (ADMIN)
+### Comunicados (ADMIN emite; PROFESSOR lê o que lhe é destinado)
 
 **CA-COM-01.** POST com `publicoAlvo` (array de `Role`, mín. 1) → 201.  
-**CA-COM-02.** `GET ?publicoAlvo=PROFESSOR` só devolve comunicados que contenham esse papel.  
-**CA-COM-03.** PATCH/DELETE por id; id inexistente → 404.
+**CA-COM-02.** `GET ?publicoAlvo=PROFESSOR` (ADMIN) só devolve comunicados que contenham esse papel.  
+**CA-COM-03.** PATCH/DELETE por id; id inexistente → 404.  
+**CA-COM-04.** `GET /comunicados` como PROFESSOR ignora query e devolve só os que incluem `PROFESSOR`.  
+**CA-COM-05.** `GET /comunicados/:id` como PROFESSOR de comunicado sem esse papel → 403.
+
+```gherkin
+@QA-COM-04
+Cenário: Professor lê só o mural do seu papel
+  Dado um JWT de PROFESSOR
+  E um comunicado só para ADMIN
+  E um comunicado com PROFESSOR no publicoAlvo
+  Quando envio GET /api/v1/comunicados
+  Então a resposta é 200
+  E só o comunicado destinado ao professor aparece
+```
 
 ### Ouvidoria (ADMIN)
 
