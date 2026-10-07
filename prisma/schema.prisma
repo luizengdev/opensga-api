@@ -62,6 +62,11 @@ enum ModalidadeCurso {
   EAD
 }
 
+enum TipoCampus {
+  CAMPI
+  POLO
+}
+
 enum TipoComponente {
   CORE_VIDA_CARREIRA // Disciplinas institucionais comuns do grupo
   ESPECIFICO // Disciplinas do núcleo técnico da formação
@@ -148,13 +153,14 @@ model Aluno {
 // --- ESTRUTURA INSTITUCIONAL E ACADÊMICA ---
 
 model Campus {
-  id         String   @id @default(uuid()) @db.Uuid
-  nome       String   @db.VarChar(120)
-  codigoPolo String   @unique @db.VarChar(20)
-  cidade     String   @db.VarChar(100)
-  estado     String   @db.VarChar(2)
-  endereco   String   @db.VarChar(255)
-  criadoEm   DateTime @default(now()) @db.Timestamptz()
+  id         String     @id @default(uuid()) @db.Uuid
+  nome       String     @db.VarChar(120)
+  codigoPolo String     @unique @db.VarChar(20)
+  tipo       TipoCampus @default(CAMPI)
+  cidade     String     @db.VarChar(100)
+  estado     String     @db.VarChar(2)
+  endereco   String     @db.VarChar(255)
+  criadoEm   DateTime   @default(now()) @db.Timestamptz()
 
   cursos Curso[]
   turmas Turma[]
@@ -174,6 +180,7 @@ model Curso {
   campus     Campus             @relation(fields: [campusId], references: [id], onDelete: Cascade)
   matrizes   MatrizCurricular[]
   matriculas Matricula[]
+  turmas     Turma[]
   preco      PrecoCurso?
 
   @@map("cursos")
@@ -238,6 +245,7 @@ model MatrizComponente {
 model Turma {
   id             String      @id @default(uuid()) @db.Uuid
   campusId       String      @db.Uuid
+  cursoId        String      @db.Uuid
   disciplinaId   String      @db.Uuid
   professorId    String      @db.Uuid
   codigo         String      @unique @db.VarChar(50)
@@ -250,6 +258,7 @@ model Turma {
   criadoEm       DateTime    @default(now()) @db.Timestamptz()
 
   campus     Campus         @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  curso      Curso          @relation(fields: [cursoId], references: [id], onDelete: Restrict)
   disciplina Disciplina     @relation(fields: [disciplinaId], references: [id], onDelete: Restrict)
   professor  Professor      @relation(fields: [professorId], references: [id], onDelete: Restrict)
   diarios    DiarioClasse[]

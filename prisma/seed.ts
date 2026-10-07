@@ -253,20 +253,22 @@ const cursosSeed: ICursoSeed[] = [
 const ensureCampus = async ({
   nome,
   codigoPolo,
+  tipo,
   cidade,
   estado,
   endereco,
 }: {
   nome: string;
   codigoPolo: string;
+  tipo: "CAMPI" | "POLO";
   cidade: string;
   estado: string;
   endereco: string;
 }) => {
   return prisma.campus.upsert({
     where: {codigoPolo},
-    update: {nome, cidade, estado, endereco},
-    create: {nome, codigoPolo, cidade, estado, endereco},
+    update: {nome, tipo, cidade, estado, endereco},
+    create: {nome, codigoPolo, tipo, cidade, estado, endereco},
   });
 };
 
@@ -490,6 +492,7 @@ async function main() {
   const sede = await ensureCampus({
     nome: "Sede Recife",
     codigoPolo: "SEDE-REC",
+    tipo: "CAMPI",
     cidade: "Recife",
     estado: "PE",
     endereco: "Av. Conde da Boa Vista, 1000",
@@ -498,6 +501,7 @@ async function main() {
   const poloEad = await ensureCampus({
     nome: "Polo EAD Recife",
     codigoPolo: "POLO-EAD",
+    tipo: "POLO",
     cidade: "Recife",
     estado: "PE",
     endereco: "Rua do Imperador, 200 — Polo Digital",
@@ -635,6 +639,7 @@ async function main() {
       where: {codigo: codigoTurma},
       update: {
         campusId: campus.id,
+        cursoId: curso.id,
         disciplinaId: especifica.id,
         professorId: professor.id,
         anoLetivo,
@@ -643,6 +648,7 @@ async function main() {
       },
       create: {
         campusId: campus.id,
+        cursoId: curso.id,
         disciplinaId: especifica.id,
         professorId: professor.id,
         codigo: codigoTurma,

@@ -646,7 +646,7 @@ export const academicRoutes = async (app: FastifyInstance): Promise<void> => {
       ...acessoAdmin,
       schema: {
         tags: ["Acadêmico - Turmas"],
-        summary: "Ofertar turma de disciplina global no semestre",
+        summary: "Ofertar turma de um curso no período letivo",
         security: [{bearerAuth: []}],
         body: createTurmaSchema,
         response: {

@@ -1,6 +1,11 @@
 import {z} from "zod";
 
-import {ModalidadeCurso, TipoComponente, TipoEntrega} from "../../generated/prisma/enums.js";
+import {
+  ModalidadeCurso,
+  TipoCampus,
+  TipoComponente,
+  TipoEntrega,
+} from "../../generated/prisma/enums.js";
 
 export const idParamsSchema = z.object({
   id: z.uuid(),
@@ -20,6 +25,7 @@ export const deleteResponseSchema = z.object({
 export const createCampusSchema = z.object({
   nome: z.string().min(3).max(120),
   codigoPolo: z.string().min(2).max(20),
+  tipo: z.enum(TipoCampus),
   cidade: z.string().min(2).max(100),
   estado: z.string().length(2),
   endereco: z.string().min(5).max(255),
@@ -31,6 +37,7 @@ export const campusResponseSchema = z.object({
   id: z.uuid(),
   nome: z.string(),
   codigoPolo: z.string(),
+  tipo: z.enum(TipoCampus),
   cidade: z.string(),
   estado: z.string(),
   endereco: z.string(),
@@ -136,6 +143,7 @@ export const updateComponenteMatrizSchema = z.object({
 
 export const createTurmaSchema = z.object({
   campusId: z.uuid(),
+  cursoId: z.uuid(),
   disciplinaId: z.uuid(),
   professorId: z.uuid(),
   codigo: z.string().min(3).max(50),
@@ -157,6 +165,7 @@ export const updateTurmaSchema = z.object({
 
 export const listTurmasQuerySchema = z.object({
   campusId: z.uuid().optional(),
+  cursoId: z.uuid().optional(),
   anoLetivo: z.coerce.number().int().min(2020).optional(),
   semestreLetivo: z.coerce.number().int().min(1).max(2).optional(),
 });
@@ -259,9 +268,15 @@ const professorResumoSchema = z.object({
   }),
 });
 
+const cursoResumoSchema = z.object({
+  id: z.uuid(),
+  nome: z.string(),
+});
+
 export const turmaResponseSchema = z.object({
   id: z.uuid(),
   campusId: z.uuid(),
+  cursoId: z.uuid(),
   disciplinaId: z.uuid(),
   professorId: z.uuid(),
   codigo: z.string(),
@@ -271,6 +286,7 @@ export const turmaResponseSchema = z.object({
   horario: z.string(),
   salaOuLink: z.string().nullable(),
   tipoEntrega: z.enum(TipoEntrega),
+  curso: cursoResumoSchema,
   disciplina: disciplinaResumoSchema,
   professor: professorResumoSchema,
   chTotal: z.number().int().nullable(),

@@ -38,6 +38,7 @@ const campusSelect = {
   id: true,
   nome: true,
   codigoPolo: true,
+  tipo: true,
   cidade: true,
   estado: true,
   endereco: true,
@@ -95,6 +96,7 @@ const componenteSelect = {
 const turmaPublicSelect = {
   id: true,
   campusId: true,
+  cursoId: true,
   disciplinaId: true,
   professorId: true,
   codigo: true,
@@ -104,6 +106,7 @@ const turmaPublicSelect = {
   horario: true,
   salaOuLink: true,
   tipoEntrega: true,
+  curso: {select: {id: true, nome: true}},
   disciplina: {select: disciplinaResumoSelect},
   professor: {
     select: {
@@ -178,6 +181,25 @@ export const updateCursoById = async ({id, data}: {id: string; data: IUpdateCurs
 
 export const countMatriculasByCurso = async (cursoId: string) => {
   return prisma.matricula.count({where: {cursoId}});
+};
+
+export const countTurmasByCurso = async (cursoId: string) => {
+  return prisma.turma.count({where: {cursoId}});
+};
+
+export const countComponentesByCursoDisciplina = async ({
+  cursoId,
+  disciplinaId,
+}: {
+  cursoId: string;
+  disciplinaId: string;
+}) => {
+  return prisma.matrizComponente.count({
+    where: {
+      disciplinaId,
+      matrizCurricular: {cursoId},
+    },
+  });
 };
 
 export const deleteCursoById = async (id: string) => {
@@ -361,6 +383,7 @@ export const insertTurma = async (data: ICreateTurmaInput) => {
 
 export const listTurmas = async ({
   campusId,
+  cursoId,
   anoLetivo,
   semestreLetivo,
   professorUserId,
@@ -368,6 +391,7 @@ export const listTurmas = async ({
   return prisma.turma.findMany({
     where: {
       ...(campusId ? {campusId} : {}),
+      ...(cursoId ? {cursoId} : {}),
       ...(anoLetivo !== undefined ? {anoLetivo} : {}),
       ...(semestreLetivo !== undefined ? {semestreLetivo} : {}),
       ...(professorUserId ? {professor: {userId: professorUserId}} : {}),
