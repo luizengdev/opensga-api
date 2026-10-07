@@ -28,6 +28,7 @@ enum StatusMatricula {
   CANCELADO
   FORMADO
   EVADIDO
+  TRANSFERIDO
 }
 
 enum StatusFatura {

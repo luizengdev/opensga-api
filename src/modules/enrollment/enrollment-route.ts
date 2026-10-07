@@ -5,8 +5,10 @@ import {Role} from "../../generated/prisma/enums.js";
 import {
   createEnrollmentHandler,
   deleteEnrollmentHandler,
+  executeInternalTransferHandler,
   getEnrollmentHandler,
   listEnrollmentsHandler,
+  previewInternalTransferHandler,
   updateEnrollmentStatusHandler,
 } from "./enrollment-controller.js";
 import {
@@ -19,6 +21,10 @@ import {
   enrollmentStatusResponseSchema,
   errorResponseSchema,
   listEnrollmentsQuerySchema,
+  transferEnrollmentResponseSchema,
+  transferEnrollmentSchema,
+  transferPreviewQuerySchema,
+  transferPreviewResponseSchema,
   updateEnrollmentStatusSchema,
 } from "./enrollment-schemas.js";
 
@@ -129,5 +135,51 @@ export const enrollmentRoutes = async (app: FastifyInstance): Promise<void> => {
       },
     },
     updateEnrollmentStatusHandler,
+  );
+
+  typedApp.get(
+    "/matriculas/:id/transferencia-preview",
+    {
+      ...acessoAdmin,
+      schema: {
+        tags: ["Matrículas"],
+        summary: "Simular transferência interna de curso ou polo/campus",
+        security: [{bearerAuth: []}],
+        params: enrollmentIdParamsSchema,
+        querystring: transferPreviewQuerySchema,
+        response: {
+          200: transferPreviewResponseSchema,
+          400: errorResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+          409: errorResponseSchema,
+        },
+      },
+    },
+    previewInternalTransferHandler,
+  );
+
+  typedApp.post(
+    "/matriculas/:id/transferencia",
+    {
+      ...acessoAdmin,
+      schema: {
+        tags: ["Matrículas"],
+        summary: "Efetivar transferência interna de curso ou polo/campus",
+        security: [{bearerAuth: []}],
+        params: enrollmentIdParamsSchema,
+        body: transferEnrollmentSchema,
+        response: {
+          200: transferEnrollmentResponseSchema,
+          400: errorResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: errorResponseSchema,
+          409: errorResponseSchema,
+        },
+      },
+    },
+    executeInternalTransferHandler,
   );
 };

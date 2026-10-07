@@ -104,7 +104,8 @@ O sistema é subdividido em domínios de negócio delimitados, operando sob regr
 - **Geração Automatizada de RA**: Criação de Registro Acadêmico único e permanente, composto pelo ano civil de ingresso acrescido de sufixo numérico exclusivo.
 - **Tratamento Integral do Responsável Legal**: Na existência de dependência legal/financeira, o sistema cria simultaneamente o perfil do responsável (com validação estrita de unicidade de CPF e e-mail em relação ao aluno) ou associa um responsável já cadastrado na instituição.
 - **Boas-Vindas e Entrega de Acesso (Onboarding Digital)**: Geração de senhas temporárias seguras com envio automático de e-mail formal da Secretaria Acadêmica, fornecendo RA, link do portal e orientações de primeiro acesso.
-- **Gestão de Ciclo de Vida da Matrícula**: Acompanhamento dos estados de vínculo do estudante: pré-matrícula, ativa, trancada, cancelada, formada ou evadida.
+- **Gestão de Ciclo de Vida da Matrícula**: Acompanhamento dos estados de vínculo do estudante: pré-matrícula, ativa, trancada, cancelada, formada, evadida ou transferida (mudança interna de curso ou polo/campus).
+- **Transferência Interna**: A secretaria reposiciona um aluno ATIVO ou TRANCADO em outro curso ou na oferta do mesmo programa em outro polo/campus. O RA não muda. A matrícula de origem fica `TRANSFERIDO` e um novo vínculo `ATIVO` é criado no destino. Se o nome do curso coincidir (mesmo programa em outra unidade/modalidade), todo o histórico de diários segue com o aluno; se o curso for outro, só as disciplinas globais presentes na matriz de destino são aproveitadas.
 
 ### 2.4 Oferta de Turmas e Alocação Semestral
 
@@ -148,7 +149,7 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 | :--- | :--- |
 | Identidade | Login unificado, `GET /auth/me` (`ativo`, ids de aluno/professor e `dependentes[]`) e `PATCH /auth/senha`. CRUD de usuários, professores e administradores; consulta de alunos e responsáveis (`/users`). JWT de conta inativa é recusado. |
 | Currículo | CRUD de campus, curso, disciplina, matriz, componente e turma (`/academic`). Auditoria MEC da matriz. Professor lista/consulta apenas as próprias turmas. |
-| Matrícula | Efetivação, consulta por status, alteração de status e exclusão do vínculo (`/matriculas`). O aluno não é apagado junto com a matrícula. |
+| Matrícula | Efetivação, consulta por status, alteração de status, exclusão do vínculo e transferência interna (`GET /matriculas/:id/transferencia-preview`, `POST /matriculas/:id/transferencia`). O aluno não é apagado junto com a matrícula. |
 | Diário | Enturmação ADMIN; listagem/consulta ADMIN+PROFESSOR (filtro JWT); desenturmação ADMIN; lançamento AV/AVS/AV3 pelo titular (`PATCH /diario/avaliar`); fechamento atômico (`POST /diario/fechar-semestre`). |
 | Dashboards | `GET /dashboard/admin` e `GET /dashboard/professor` com KPIs do período letivo. |
 | Financeiro | Precificação por curso (`/financeiro/precos`, ADMIN): o valor é cadastrado no OpenSGA e sincronizado como Product/Price no Stripe. Emissão de faturas (`/financeiro/faturas`). Inscrição/checkout (`POST /api/inscricao`, `POST /api/checkout`) só abrem o Stripe se o valor devido agora for maior que zero; isenção (cupom 100% na 1ª parcela) conclui em `PRE_MATRICULADO` sem cartão e agenda fatura `PENDENTE` no ciclo seguinte. Quando há cobrança, o Checkout oferece cartão e boleto (voucher em 3 dias). Webhook `POST /webhooks/stripe` ativa matrícula em `checkout.session.completed` só se `payment_status=paid` (cartão) ou em `checkout.session.async_payment_succeeded` (boleto); boleto gerado (`completed` + `unpaid`) e `async_payment_failed` não efetivam a vaga. Também concilia `invoice.payment_succeeded` e `invoice.payment_failed`. |
@@ -354,6 +355,7 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
   - `CANCELADO`: Rompimento definitivo do vínculo acadêmico por desistência ou rescisão contratual.
   - `FORMADO`: Aluno que completou com êxito todas as exigências curriculares e de colação de grau.
   - `EVADIDO`: Aluno que abandonou os estudos sem comunicação formal à Secretaria Acadêmica no período regulamentar.
+  - `TRANSFERIDO`: Vínculo encerrado por transferência interna para outro curso ou polo/campus da instituição.
 - **Status da Fatura**:
   - `PENDENTE`: Cobrança gerada e aguardando liquidação até a data de vencimento.
   - `PAGA`: Liquidação financeira confirmada pelo gateway de pagamento ou baixa manual.

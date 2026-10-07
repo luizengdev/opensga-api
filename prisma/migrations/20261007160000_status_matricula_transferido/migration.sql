@@ -1,0 +1,1 @@
+ALTER TYPE "StatusMatricula" ADD VALUE 'TRANSFERIDO';

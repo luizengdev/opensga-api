@@ -2,7 +2,7 @@
 
 | Campo              | Valor                                                          |
 | :----------------- | :------------------------------------------------------------- |
-| Versão             | 1.1.0                                                          |
+| Versão             | 1.2.0                                                          |
 | Data               | 07/10/2026                                                     |
 | Público            | QA, Postman/Newman, Playwright (E2E do front), desenvolvimento |
 | Base HTTP          | `{{API_BASE_URL}}` (dev: `http://localhost:3333`)              |
@@ -472,8 +472,12 @@ Cenário: Professor acessa turma de outro docente
 - CPF/e-mail do aluno únicos na instituição.
 - Responsável: ou nenhum campo, ou os quatro (`responsavelCpf`, `responsavelNome`, `responsavelEmail`, `parentesco`). CPF/e-mail do responsável ≠ aluno.
 - Lista: `GET /matriculas?status=` (sem filtro = todos os status).
-- `PATCH /matriculas/:id/status` com `PRE_MATRICULADO | ATIVO | TRANCADO | CANCELADO | FORMADO | EVADIDO`.
+- `PATCH /matriculas/:id/status` com `PRE_MATRICULADO | ATIVO | TRANCADO | CANCELADO | FORMADO | EVADIDO | TRANSFERIDO`.
 - `DELETE /matriculas/:id` remove diários; **não** apaga o aluno.
+- Transferência interna (`ADMIN`): origem `ATIVO` ou `TRANCADO`; destino = outro `cursoId` (curso distinto ou mesma oferta em outro polo/campus) com matriz ativa daquele curso.
+- Mesmo programa (`nome` do curso, case-insensitive) → move **todos** os diários para a nova matrícula. Curso diferente → move só diários cuja `disciplinaId` está na matriz de destino; os demais permanecem no vínculo `TRANSFERIDO`.
+- Origem fica `TRANSFERIDO`; destino nasce `ATIVO` (mesmo RA, `periodoAtual` e `semestreIngresso` da origem). 409 se já houver matrícula `PRE_MATRICULADO`, `ATIVO` ou `TRANCADO` no curso destino.
+- `GET /matriculas/:id/transferencia-preview?cursoId&matrizCurricularId` simula (200) sem persistir. `POST /matriculas/:id/transferencia` efetivar.
 
 ### Critérios de aceite
 
@@ -483,7 +487,13 @@ Cenário: Professor acessa turma de outro docente
 **CA-MAT-04.** Responsável parcial → 400.  
 **CA-MAT-05.** `GET /matriculas?status=ATIVO` não devolve trancadas.  
 **CA-MAT-06.** PATCH status → 200 `{ id, status }`.  
-**CA-MAT-07.** DELETE matrícula → 200; `GET /users/alunos/:id` do aluno ainda existe.
+**CA-MAT-07.** DELETE matrícula → 200; `GET /users/alunos/:id` do aluno ainda existe.  
+**CA-MAT-08.** `POST /matriculas/:id/transferencia` de ATIVO para outro curso do **mesmo nome** (outro polo/campus) → 200; origem `TRANSFERIDO`; destino `ATIVO`; todos os diários mudam de `matriculaId`.  
+**CA-MAT-09.** Transferência para curso de **nome diferente** → só diários cuja disciplina está na matriz destino mudam de matrícula; os demais permanecem na origem.  
+**CA-MAT-10.** Destino = mesmo `cursoId` da origem → 400.  
+**CA-MAT-11.** Origem `PRE_MATRICULADO`, `CANCELADO`, `FORMADO`, `EVADIDO` ou `TRANSFERIDO` → 400.  
+**CA-MAT-12.** Já existe matrícula `ATIVO`/`TRANCADO`/`PRE_MATRICULADO` no curso destino → 409.  
+**CA-MAT-13.** `GET .../transferencia-preview` com os mesmos dados de CA-MAT-08 → 200, `mesmoCurso=true`, sem criar matrícula.
 
 ```gherkin
 @QA-MAT-01
@@ -507,6 +517,32 @@ Cenário: Excluir matrícula preserva o aluno
   Quando envio DELETE /matriculas/:id
   Então a resposta é 200
   E o perfil ALUNO continua listável
+
+@QA-MAT-08
+Cenário: Transferência interna do mesmo curso entre polo e campus
+  Dado matrícula ATIVO em Engenharia Presencial (SEDE)
+  E o aluno possui diários na origem
+  E existe Engenharia EAD no polo com o mesmo nome e matriz ativa
+  Quando envio POST /matriculas/:id/transferencia com cursoId e matrizCurricularId do polo
+  Então a resposta é 200
+  E mesmoCurso é true
+  E a origem fica TRANSFERIDO
+  E a nova matrícula é ATIVO no polo
+  E todos os diários passam a referenciar a matrícula de destino
+
+@QA-MAT-09
+Cenário: Transferência para curso distinto aproveita só disciplinas em comum
+  Dado matrícula ATIVO em Engenharia com diário de Ética (catálogo global) e de Cálculo I
+  E o curso destino Direito contém Ética na matriz, mas não Cálculo I
+  Quando efetivo a transferência
+  Então o diário de Ética migra para a nova matrícula
+  E o diário de Cálculo I permanece no vínculo TRANSFERIDO
+
+@QA-MAT-12
+Cenário: Destino já ocupado
+  Dado o aluno já possui matrícula ATIVO no curso destino
+  Quando envio POST /matriculas/:id/transferencia
+  Então a resposta é 409
 ```
 
 ---
@@ -797,6 +833,7 @@ Cenário: Responder reclamação
 | DELETE matriz sem componente e sem matrícula     | 200                                 | QA-MTZ-09 |
 | DELETE turma                                     | 200; diários somem                  | QA-DEL-03 |
 | DELETE matrícula                                 | 200; aluno permanece                | QA-DEL-04 |
+| POST transferência com destino já ocupado        | 409                                 | QA-MAT-12 |
 | DELETE responsável (via user)                    | aluno fica com `responsavelId` null | QA-DEL-05 |
 | GET/DELETE id inexistente                        | 404                                 | QA-DEL-06 |
 

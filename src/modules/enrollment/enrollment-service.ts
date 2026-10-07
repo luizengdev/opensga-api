@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 
 import bcrypt from "bcrypt";
 
-import {Role, StatusMatricula} from "../../generated/prisma/enums.js";
+import {ModalidadeCurso, Role, StatusDisciplina, StatusMatricula, TipoCampus} from "../../generated/prisma/enums.js";
 import {dayjs} from "../../lib/dayjs.js";
 import {sendCredentialsEmail} from "../../lib/mailer.js";
 import {
@@ -11,19 +11,28 @@ import {
   deleteEnrollmentById,
   findActiveMatrizByCursoId,
   findActiveMatrizById,
+  findCursoDestinoForTransfer,
   findEnrollmentById,
+  findEnrollmentForTransfer,
   findMatriculaByAlunoAndCurso,
+  findOpenEnrollmentOnCurso,
   findCandidateByCpfAndEmail,
   findUserByCpfOrEmail,
   listEnrollments,
+  persistInternalTransfer,
   updateEnrollmentStatus,
 } from "./enrollment-repository.js";
-import type {ICreateEnrollmentInput, IListEnrollmentsQuery, IUpdateEnrollmentStatusInput} from "./enrollment-schemas.js";
+import type {
+  ICreateEnrollmentInput,
+  IListEnrollmentsQuery,
+  ITransferEnrollmentInput,
+  IUpdateEnrollmentStatusInput,
+} from "./enrollment-schemas.js";
 
 export class EnrollmentError extends Error {
-  readonly statusCode: 400 | 404;
+  readonly statusCode: 400 | 404 | 409;
 
-  constructor(message: string, statusCode: 400 | 404) {
+  constructor(message: string, statusCode: 400 | 404 | 409) {
     super(message);
     this.name = "EnrollmentError";
     this.statusCode = statusCode;
@@ -271,4 +280,222 @@ export const changeEnrollmentStatus = async ({
   }
 
   return matricula;
+};
+
+const STATUS_ORIGEM_TRANSFERIVEL: StatusMatricula[] = [StatusMatricula.ATIVO, StatusMatricula.TRANCADO];
+
+const normalizeCursoNome = (nome: string) => {
+  return nome.trim().toLowerCase().replace(/\s+/g, " ");
+};
+
+interface IDiarioTransferencia {
+  id: string;
+  statusDisciplina: StatusDisciplina;
+  turma: {
+    disciplinaId: string;
+    disciplina: {id: string; codigo: string; nome: string};
+  };
+}
+
+interface ICursoTransferencia {
+  id: string;
+  nome: string;
+  modalidade: ModalidadeCurso;
+  campus: {
+    id: string;
+    nome: string;
+    codigoPolo: string;
+    tipo: TipoCampus;
+  };
+}
+
+const mapDiarioTransferencia = (diario: IDiarioTransferencia) => {
+  return {
+    diarioId: diario.id,
+    disciplinaId: diario.turma.disciplina.id,
+    codigo: diario.turma.disciplina.codigo,
+    nome: diario.turma.disciplina.nome,
+    statusDisciplina: diario.statusDisciplina,
+  };
+};
+
+const classifyHistorico = ({
+  origemNome,
+  destinoNome,
+  diarios,
+  disciplinaIdsDestino,
+}: {
+  origemNome: string;
+  destinoNome: string;
+  diarios: IDiarioTransferencia[];
+  disciplinaIdsDestino: string[];
+}) => {
+  const mesmoCurso = normalizeCursoNome(origemNome) === normalizeCursoNome(destinoNome);
+
+  if (mesmoCurso) {
+    return {
+      mesmoCurso: true,
+      disciplinasTransferiveis: diarios.map(mapDiarioTransferencia),
+      disciplinasNaoTransferiveis: [],
+    };
+  }
+
+  const destSet = new Set(disciplinaIdsDestino);
+
+  return {
+    mesmoCurso: false,
+    disciplinasTransferiveis: diarios
+      .filter((diario) => destSet.has(diario.turma.disciplinaId))
+      .map(mapDiarioTransferencia),
+    disciplinasNaoTransferiveis: diarios
+      .filter((diario) => !destSet.has(diario.turma.disciplinaId))
+      .map(mapDiarioTransferencia),
+  };
+};
+
+const resolveTransferPlan = async ({
+  matriculaId,
+  cursoId,
+  matrizCurricularId,
+}: {
+  matriculaId: string;
+  cursoId: string;
+  matrizCurricularId: string;
+}) => {
+  const origem = await findEnrollmentForTransfer(matriculaId);
+
+  if (!origem) {
+    throw new EnrollmentError("Matrícula não encontrada.", 404);
+  }
+
+  if (!STATUS_ORIGEM_TRANSFERIVEL.includes(origem.status)) {
+    throw new EnrollmentError("Só é possível transferir matrícula ativa ou trancada.", 400);
+  }
+
+  if (origem.curso.id === cursoId) {
+    throw new EnrollmentError("O destino precisa ser outro curso ou polo/campus.", 400);
+  }
+
+  const destinoCurso = await findCursoDestinoForTransfer({cursoId, matrizCurricularId});
+  const destinoMatriz = destinoCurso?.matrizes[0];
+
+  if (!destinoCurso || !destinoMatriz) {
+    throw new EnrollmentError("Curso de destino ou matriz curricular não encontrada, inativa ou incompatível.", 404);
+  }
+
+  const vinculoAberto = await findOpenEnrollmentOnCurso({
+    alunoId: origem.alunoId,
+    cursoId,
+  });
+
+  if (vinculoAberto) {
+    throw new EnrollmentError("O aluno já possui matrícula em aberto no curso de destino.", 409);
+  }
+
+  const historico = classifyHistorico({
+    origemNome: origem.curso.nome,
+    destinoNome: destinoCurso.nome,
+    diarios: origem.diarios,
+    disciplinaIdsDestino: destinoMatriz.componentes.map((componente) => componente.disciplinaId),
+  });
+
+  return {
+    origem,
+    destinoCurso,
+    destinoMatriz,
+    ...historico,
+  };
+};
+
+const toTransferenciaCurso = ({
+  curso,
+  matriz,
+}: {
+  curso: ICursoTransferencia;
+  matriz: {id: string; nome: string; anoVigencia: number};
+}) => {
+  return {
+    id: curso.id,
+    nome: curso.nome,
+    modalidade: curso.modalidade,
+    campus: curso.campus,
+    matriz,
+  };
+};
+
+export const previewInternalTransfer = async ({
+  matriculaId,
+  cursoId,
+  matrizCurricularId,
+}: {
+  matriculaId: string;
+  cursoId: string;
+  matrizCurricularId: string;
+}) => {
+  const plan = await resolveTransferPlan({matriculaId, cursoId, matrizCurricularId});
+
+  return {
+    matriculaOrigemId: plan.origem.id,
+    aluno: {
+      ra: plan.origem.aluno.ra,
+      nome: plan.origem.aluno.user.nome,
+    },
+    origem: toTransferenciaCurso({
+      curso: plan.origem.curso,
+      matriz: plan.origem.matrizCurricular,
+    }),
+    destino: toTransferenciaCurso({
+      curso: plan.destinoCurso,
+      matriz: plan.destinoMatriz,
+    }),
+    mesmoCurso: plan.mesmoCurso,
+    disciplinasTransferiveis: plan.disciplinasTransferiveis,
+    disciplinasNaoTransferiveis: plan.disciplinasNaoTransferiveis,
+  };
+};
+
+export const executeInternalTransfer = async ({
+  matriculaId,
+  input,
+}: {
+  matriculaId: string;
+  input: ITransferEnrollmentInput;
+}) => {
+  const plan = await resolveTransferPlan({
+    matriculaId,
+    cursoId: input.cursoId,
+    matrizCurricularId: input.matrizCurricularId,
+  });
+
+  const destino = await persistInternalTransfer({
+    origemId: plan.origem.id,
+    alunoId: plan.origem.alunoId,
+    cursoId: plan.destinoCurso.id,
+    matrizCurricularId: plan.destinoMatriz.id,
+    periodoAtual: plan.origem.periodoAtual,
+    semestreIngresso: plan.origem.semestreIngresso,
+    diarioIds: plan.disciplinasTransferiveis.map((disciplina) => disciplina.diarioId),
+  });
+
+  return {
+    matriculaOrigemId: plan.origem.id,
+    matriculaDestinoId: destino.id,
+    statusOrigem: StatusMatricula.TRANSFERIDO,
+    statusDestino: StatusMatricula.ATIVO,
+    aluno: {
+      ra: plan.origem.aluno.ra,
+      nome: plan.origem.aluno.user.nome,
+    },
+    origem: toTransferenciaCurso({
+      curso: plan.origem.curso,
+      matriz: plan.origem.matrizCurricular,
+    }),
+    destino: toTransferenciaCurso({
+      curso: plan.destinoCurso,
+      matriz: plan.destinoMatriz,
+    }),
+    mesmoCurso: plan.mesmoCurso,
+    disciplinasTransferiveis: plan.disciplinasTransferiveis,
+    disciplinasNaoTransferiveis: plan.disciplinasNaoTransferiveis,
+  };
 };

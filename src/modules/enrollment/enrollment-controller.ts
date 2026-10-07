@@ -1,12 +1,20 @@
 import {FastifyReply, FastifyRequest} from "fastify";
 
-import type {ICreateEnrollmentInput, IListEnrollmentsQuery, IUpdateEnrollmentStatusInput} from "./enrollment-schemas.js";
+import type {
+  ICreateEnrollmentInput,
+  IListEnrollmentsQuery,
+  ITransferEnrollmentInput,
+  ITransferPreviewQuery,
+  IUpdateEnrollmentStatusInput,
+} from "./enrollment-schemas.js";
 import {
   changeEnrollmentStatus,
   EnrollmentError,
   executeEnrollment,
+  executeInternalTransfer,
   fetchAllEnrollments,
   fetchEnrollmentById,
+  previewInternalTransfer,
   removeEnrollment,
 } from "./enrollment-service.js";
 
@@ -74,5 +82,36 @@ export const updateEnrollmentStatusHandler = async (
     return reply.status(200).send(matricula);
   } catch (error) {
     return replyWithEnrollmentError(error, reply, "Erro ao atualizar o status da matrícula.");
+  }
+};
+
+export const previewInternalTransferHandler = async (
+  request: FastifyRequest<{Params: {id: string}; Querystring: ITransferPreviewQuery}>,
+  reply: FastifyReply,
+) => {
+  try {
+    const preview = await previewInternalTransfer({
+      matriculaId: request.params.id,
+      cursoId: request.query.cursoId,
+      matrizCurricularId: request.query.matrizCurricularId,
+    });
+    return reply.status(200).send(preview);
+  } catch (error) {
+    return replyWithEnrollmentError(error, reply, "Erro ao simular a transferência interna.");
+  }
+};
+
+export const executeInternalTransferHandler = async (
+  request: FastifyRequest<{Params: {id: string}; Body: ITransferEnrollmentInput}>,
+  reply: FastifyReply,
+) => {
+  try {
+    const result = await executeInternalTransfer({
+      matriculaId: request.params.id,
+      input: request.body,
+    });
+    return reply.status(200).send(result);
+  } catch (error) {
+    return replyWithEnrollmentError(error, reply, "Erro ao efetivar a transferência interna.");
   }
 };
