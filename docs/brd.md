@@ -86,7 +86,7 @@ O sistema é subdividido em domínios de negócio delimitados, operando sob regr
 
 ### 2.2 Estrutura Curricular e Governança Regulatória MEC
 
-- **Catálogo Centralizado de Disciplinas**: Entidades globais padronizadas evitam duplicidade de nomenclaturas e garantem consistência institucional entre campi.
+- **Catálogo Centralizado de Disciplinas**: Entidades globais padronizadas (nome, código, tipo curricular, tipo de entrega e carga horária) evitam duplicidade de nomenclaturas e garantem consistência institucional entre campi. O semestre ideal só é informado ao incluir a disciplina na matriz de um curso.
 - **Versionamento de Matrizes Curriculares**: Um mesmo curso superior pode ter múltiplas matrizes curriculares atreladas a diferentes anos de vigência, assegurando segurança jurídica aos alunos de diferentes períodos de ingresso.
 - **Tridimensionalidade da Carga Horária**: Cada componente curricular define sua carga horária total distribuída obrigatoriamente entre três modalidades de entrega:
   1. *Presencial Física* (em salas de aula, laboratórios ou polos).
@@ -108,7 +108,7 @@ O sistema é subdividido em domínios de negócio delimitados, operando sob regr
 
 ### 2.4 Oferta de Turmas e Alocação Semestral
 
-- **Planejamento por Período Letivo**: Oferta de turmas semestrais atreladas a um campus/polo, com especificação de disciplina, docente titular, limite de capacidade física/virtual, horário e local/link.
+- **Planejamento por Período Letivo**: Oferta de turmas semestrais atreladas a um **curso** e ao campus/polo desse curso. A secretaria escolhe o semestre letivo (ano + 1º/2º), a disciplina da matriz daquele curso, o docente titular, a capacidade, o horário e o local/link.
 - **Monitoramento de Ocupação**: Rastreamento da quantidade de alunos enturmados em tempo real contra o limite de vagas planejado.
 
 ### 2.5 Diário de Classe, Frequência e Rendimento Escolar
@@ -190,15 +190,15 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 [Início: Criação de Nova Grade]
        │
        ▼
-[Cadastrar Campus e Código de Polo MEC]
+[Cadastrar unidade: Campus (presencial) ou Polo (EAD) + código MEC]
        │
        ▼
 [Criar Curso e Nova Versão de Matriz Curricular]
        │
        ▼
 [Vincular Componentes Curriculares à Matriz]
-  ├─> Definir Semestre Ideal e Classificação (Ex: Extensão)
-  └─> Decompor Carga Horária: Presencial + Síncrona + Assíncrona = CH Total
+  ├─> Escolher disciplina do catálogo (carga e tipo já cadastrados)
+  └─> Informar o semestre ideal naquela matriz (carga/tipo podem ser sobrescritos)
        │
        ▼
 [Executar Auditoria de Conformidade MEC]
@@ -332,11 +332,11 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 - **AV3 (Recuperação Final)**: Exame habilitado apenas se a nota semestral for inferior a 6,0 e a frequência for regular. Média final = (NS + AV3) / 2, corte em 5,0.
 - **Aluno**: Pessoa física com matrícula ativa ou com histórico curricular em um dos cursos da instituição.
 - **Assiduidade**: Índice de comparecimento do estudante às aulas da disciplina. O descumprimento de mais de 25% da carga horária gera reprovação sumária por infrequência.
-- **Campus / Polo**: Unidade física ou sede regional onde as atividades letivas e administrativas ocorrem, identificado formalmente por seu Código de Polo perante os cadastros do MEC.
+- **Campus / Polo**: Unidade da IES identificada pelo código MEC (`codigoPolo`). `tipo = CAMPI` é sede presencial (cursos presencial/semipresencial); `tipo = POLO` é polo de apoio EAD (somente cursos EAD).
 - **Carga Horária Cumprida (`chCumprida`)**: Quantidade de horas de uma disciplina que são efetivamente incorporadas ao histórico de integralização do estudante, condicionada estritamente à sua aprovação.
 - **Curricularização da Extensão**: Exigência legal estabelecida pela Resolução CNE/CES nº 7/2018 que impõe que no mínimo 10% da carga horária total da formação universitária seja dedicada a projetos e ações de extensão com a comunidade externa.
 - **Diário de Classe**: Instrumento formal de escrituração acadêmica onde são consolidados os registros de presença, ausências, notas parciais, exame final e resultado conclusivo de cada aluno em uma turma ofertada.
-- **Disciplina Global**: Entidade curricular neutra (ex.: *Cálculo I*, *Comunicação Empresarial*) reutilizável em múltiplos cursos ou unidades, evitando cadastros concorrentes no sistema.
+- **Disciplina Global**: Entidade curricular do catálogo (ex.: *Cálculo I*, *Comunicação Empresarial*), com carga e classificação padrão, reutilizável em múltiplos cursos. Semestre ideal pertence ao componente da matriz, não ao catálogo.
 - **Enturmação**: Ação de alocar um aluno formalmente matriculado em uma turma específica ofertada em um determinado semestre letivo.
 - **Matrícula**: Registro de vínculo contratual e acadêmico que associa um discente a um curso e a uma versão específica de matriz curricular.
 - **Matriz Curricular**: Versão pedagógica oficial do curso que estabelece a relação de disciplinas, cargas horárias, pré-requisitos, semestre ideal e modalidades de ensino aplicáveis aos alunos que ingressaram em seu período de vigência.
@@ -359,7 +359,7 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
   - `PAGA`: Liquidação financeira confirmada pelo gateway de pagamento ou baixa manual.
   - `ATRASADA`: Título vencido sem registro de pagamento, sujeito a ações de cobrança amigável.
   - `CANCELADA`: Cobrança invalidada por renegociação, bolsa, estorno ou cancelamento administrativo.
-- **Turma**: Instância de oferta semestral de uma disciplina global, vinculada a um campus, um docente regente, uma faixa de horário, um espaço físico/virtual e um limite pré-determinado de vagas.
+- **Turma**: Instância de oferta semestral de uma disciplina da matriz de um curso, no campus/polo desse curso, com docente regente, horário, local/link e limite de vagas. O período letivo (`anoLetivo`.`semestreLetivo`) é escolhido na oferta.
 
 ---
 

@@ -110,7 +110,7 @@ Rodar seed: `npx prisma db seed --config prisma7.config.ts`.
 | Docente         | `professor@opensga.dev`, CPF `111.111.111-11` ou matrícula `PROF-001` | `Professor@123456` | `PROFESSOR` | Turmas próprias, diário, dashboard, avaliar |
 | Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001`          | `Aluno@123456`     | `ALUNO`     | Login, `/me` e portal (`/portal/contexto`, `/portal/ouvidoria`) |
 
-Dados acadêmicos criados pelo seed: campi `SEDE-REC` (5 cursos PRESENCIAL) e `POLO-EAD` (5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem AV/AVS, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`.
+Dados acadêmicos criados pelo seed: `SEDE-REC` (`tipo = CAMPI`, 5 cursos PRESENCIAL) e `POLO-EAD` (`tipo = POLO`, 5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** com `cursoId` e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem AV/AVS, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`.
 
 Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`getMonth() < 6`), senão `2`. Dashboard e seed usam a mesma regra.
 
@@ -296,12 +296,14 @@ Cenário: E-mail duplicado na atualização
 
 ### 8.1 Campus, curso, disciplina (CRUD ADMIN)
 
-**Regras.** Campus tem `codigoPolo` único e `estado` com 2 letras. Curso exige `campusId` existente. Disciplina é catálogo global (`codigo` único) com carga e tipo (`tipo`, `tipoEntrega`, `chTotal`, parcelas e `chExtensao`). `chPresencial + chSincrona + chAssincrona = chTotal`. Pisos do Decreto 12.456 **não** se aplicam no catálogo (só no componente da matriz, pela modalidade do curso). Semestre ideal não existe na disciplina.
+**Regras.** Campus tem `codigoPolo` único, `estado` com 2 letras e `tipo` (`CAMPI` presencial/semipresencial ou `POLO` EAD). Curso exige `campusId` existente; polo só aceita modalidade EAD; campus não aceita EAD. Disciplina é catálogo global (`codigo` único) com carga e tipo (`tipo`, `tipoEntrega`, `chTotal`, parcelas e `chExtensao`). `chPresencial + chSincrona + chAssincrona = chTotal`. Pisos do Decreto 12.456 **não** se aplicam no catálogo (só no componente da matriz, pela modalidade do curso). Semestre ideal não existe na disciplina.
 
-**CA-ACA-01.** CRUD campus: POST 201, GET lista/id 200, PATCH 200, DELETE sem matrículas 200.  
+**CA-ACA-01.** CRUD campus: POST 201 (com `tipo` CAMPI ou POLO), GET lista/id 200, PATCH 200, DELETE sem matrículas 200.  
 **CA-ACA-02.** Campus/curso inexistente em GET/PATCH/DELETE → 404.  
 **CA-ACA-03.** Curso com `campusId` inválido → 404.  
 **CA-ACA-04.** `GET /academic/cursos?campusId=` filtra pelo campus.  
+**CA-ACA-07.** POST campus com `tipo` CAMPI ou POLO → 201 e o corpo inclui `tipo`.  
+**CA-ACA-08.** POST curso EAD em campus `CAMPI` ou presencial em `POLO` → 400.  
 **CA-ACA-05.** POST disciplina com soma CH ≠ total → 400.  
 **CA-ACA-06.** POST disciplina válida → 201 e o corpo inclui `tipo`, `tipoEntrega`, `chTotal` e as parcelas.
 
@@ -309,9 +311,24 @@ Cenário: E-mail duplicado na atualização
 @QA-ACA-01
 Cenário: Criar e buscar campus
   Dado um JWT de ADMIN
-  Quando envio POST /api/v1/academic/campi com nome, codigoPolo, cidade, estado e endereco
+  Quando envio POST /api/v1/academic/campi com nome, codigoPolo, tipo CAMPI, cidade, estado e endereco
   Então a resposta é 201
-  E GET /academic/campi/:id devolve o mesmo codigoPolo
+  E GET /academic/campi/:id devolve o mesmo codigoPolo e tipo CAMPI
+
+@QA-ACA-07
+Cenário: Polo EAD no cadastro de unidade
+  Dado um JWT de ADMIN
+  Quando envio POST /api/v1/academic/campi com tipo POLO
+  Então a resposta é 201
+  E o corpo inclui tipo POLO
+
+@QA-ACA-08
+Cenário: Modalidade incompatível com o tipo da unidade
+  Dado um campus CAMPI e um polo POLO
+  Quando crio um curso EAD no campus CAMPI
+  Então a resposta é 400
+  Quando crio um curso PRESENCIAL no polo POLO
+  Então a resposta é 400
 
 @QA-ACA-05
 Cenário: Disciplina com carga horária inconsistente
@@ -418,13 +435,15 @@ Cenário: Matriz inconforme em extensão
 
 ### 8.4 Turmas
 
-**Regras.** CRUD ADMIN. GET lista/id também PROFESSOR (somente `professor.userId = JWT.sub`). Filtros opcionais: `campusId`, `anoLetivo`, `semestreLetivo`. Lista inclui `quantidadeDiarios`.
+**Regras.** CRUD ADMIN. GET lista/id também PROFESSOR (somente `professor.userId = JWT.sub`). Filtros opcionais: `campusId`, `cursoId`, `anoLetivo`, `semestreLetivo`. Lista inclui `quantidadeDiarios`. A turma pertence a um curso; a disciplina precisa estar na matriz desse curso; o campus deve ser o do curso.
 
-**CA-TUR-01.** ADMIN cria turma com campus, disciplina e professor existentes → 201.  
+**CA-TUR-01.** ADMIN cria turma com curso, campus do curso, disciplina da matriz e professor existentes → 201.  
 **CA-TUR-02.** FK inexistente → 404.  
 **CA-TUR-03.** ADMIN lista todas; professor lista só as suas.  
 **CA-TUR-04.** Professor em `GET /turmas/:id` de outra turma → 403.  
-**CA-TUR-05.** DELETE turma remove diários (Cascade) e retorna 200.
+**CA-TUR-05.** DELETE turma remove diários (Cascade) e retorna 200.  
+**CA-TUR-06.** Disciplina fora da matriz do curso → 400.  
+**CA-TUR-07.** `campusId` diferente do campus do curso → 400.
 
 ```gherkin
 @QA-TUR-03
@@ -771,6 +790,7 @@ Cenário: Responder reclamação
 | Ação                                             | Esperado                            | ID        |
 | :----------------------------------------------- | :---------------------------------- | :-------- |
 | DELETE campus/curso/matriz com matrícula filha   | 409                                 | QA-DEL-01 |
+| DELETE curso com turma ofertada                  | 409                                 | QA-TUR-08 |
 | DELETE disciplina ou usuário professor com turma | 409                                 | QA-DEL-02 |
 | DELETE componente com alunos enturmados na disciplina | 409                              | QA-DEL-07 |
 | DELETE matriz com componente                     | 409                                 | QA-MTZ-08 |
@@ -874,7 +894,7 @@ Pastas sugeridas (espelham este doc):
 2. `01-Auth` — me, senha, inativo
 3. `02-RBAC` — 401/403
 4. `03-Users`
-5. `04-Academic` — campus, curso, disciplina, matriz, componente, MEC, turma
+5. `04-Academic` — campus (`tipo` CAMPI/POLO), curso (modalidade × unidade), disciplina (catálogo CH), matriz, componente, MEC, turma (`cursoId` + período)
 6. `05-Enrollment`
 7. `06-Grading` — enturmar, listar, avaliar (tabela de decisão), desenturmar
 8. `07-Dashboard`

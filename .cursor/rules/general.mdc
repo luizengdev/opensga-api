@@ -160,16 +160,15 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 ## 6. Regras de Negócio e Modelo Regulatório IES (MEC)
 
-### A. Matriz Curricular vs. Disciplina Global
+### A. Campus, disciplina, matriz e oferta de turma
 
-- `Disciplina` é uma entidade global (ex: _Cálculo I_, _Ética_). Evita duplicação no banco.
-- `MatrizCurricular` representa o versionamento curricular de um curso por ano/semestre de vigência.
-- `MatrizComponente` é a tabela pivot que conecta `MatrizCurricular` à `Disciplina`, definindo:
-  - `semestreIdeal`
-  - `tipo` (`CORE_VIDA_CARREIRA`, `ESPECIFICO`, `ELETIVA_TRILHA`, `EXTENSAO`, `OPTATIVO`)
-  - `tipoEntrega` (`PRESENCIAL_FISICO`, `SINCRONO_MEDIADO`, `ASSINCRONO_DIGITAL`)
-  - Distribuição horária: `chTotal = chPresencial + chSincrona + chAssincrona`.
-  - `chExtensao`: Horas destinadas à extensão curricular.
+- `Campus.tipo`: `CAMPI` (sede presencial) ou `POLO` (polo de apoio EAD). `codigoPolo` continua o código único da unidade no MEC.
+- Curso em `CAMPI`: só `PRESENCIAL` ou `SEMIPRESENCIAL`. Curso em `POLO`: só `EAD`. POST/PATCH curso incompatível → 400.
+- `Disciplina` é catálogo global (ex: _Cálculo I_, _Ética_) com `tipo`, `tipoEntrega`, `chTotal`, parcelas e `chExtensao`. `assertCargaHoraria` no POST/PATCH (`chTotal = presencial + síncrona + assíncrona`). Pisos do Decreto 12.456 **não** se aplicam no catálogo. Semestre ideal **não** existe na disciplina.
+- `MatrizCurricular` versiona o currículo do curso por ano de vigência.
+- `MatrizComponente` liga matriz à disciplina e define `semestreIdeal` (único campo só da matriz). Carga/tipo/entrega/extensão vêm do catálogo e podem ser sobrescritos naquele componente.
+- `DELETE /academic/matrizes/:id`: 409 se ainda houver componentes ou matrículas; matriz vazia e sem matrícula → 200.
+- `Turma` pertence a um `cursoId`. `campusId` deve ser o campus do curso. `disciplinaId` deve estar em alguma matriz desse curso. Body de criação inclui `anoLetivo` e `semestreLetivo` (1 ou 2). GET lista filtra `campusId`, `cursoId`, `anoLetivo`, `semestreLetivo`.
 
 ### B. Conformidade Regulatória MEC
 
@@ -195,7 +194,7 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 Definir `onDelete` explicitamente no Prisma. Antes de `delete`, o service conta filhos Restrict e lança erro de domínio **409** — não deixar o Prisma devolver P2003 cru.
 
 - **Cascade**: `User` → perfil (Professor / Aluno / Responsável) e `Reclamacao`; `Campus` → `Curso` → `Matriz` → `Componente`; `Campus` → `Turma`; `Curso` → `PrecoCurso`; `Aluno` → `Matricula` / `Fatura`; `Turma` ou `Matricula` → `DiarioClasse`.
-- **Restrict** (409 se houver filho): `Turma.disciplina`, `Turma.professor`, `Matricula.curso`, `Matricula.matrizCurricular`.
+- **Restrict** (409 se houver filho): `Turma.curso`, `Turma.disciplina`, `Turma.professor`, `Matricula.curso`, `Matricula.matrizCurricular`. DELETE curso com turmas ofertadas → 409.
 - **SetNull**: `Aluno.responsavelId` ao apagar o responsável.
 - Não apagar o próprio usuário autenticado. Apagar matrícula não apaga o aluno.
 
@@ -204,7 +203,7 @@ Definir `onDelete` explicitamente no Prisma. Antes de `delete`, o service conta 
 - `GET /dashboard/admin`: matrículas por status, turmas do período, ocupação média, faturas `PENDENTE`, reclamações `ABERTO`.
 - `GET /dashboard/professor`: turmas do período com `quantidadeDiarios`/`capacidade` e contagem de diários sem nota semestral (AV/AVS).
 - Período padrão: ano corrente e semestre `1` de janeiro a junho, `2` no restante do ano. Aceitar query `anoLetivo` e `semestreLetivo`.
-- Seed de demo (`prisma/seed.ts`): admin, campi `SEDE-REC` e `POLO-EAD`, 5 cursos PRESENCIAL e 5 EAD (matriz 2026.1 com extensão ≥ 10%, 1 professor e 2 alunos cada, turma do período corrente, diários, faturas). Personas canônicas: `professor@opensga.dev` e `aluno@opensga.dev`. `PrecoCurso` via Stripe quando `STRIPE_SECRET_KEY` existir. Rodar `npx prisma db seed --config prisma7.config.ts`.
+- Seed de demo (`prisma/seed.ts`): admin, `SEDE-REC` (`tipo = CAMPI`) e `POLO-EAD` (`tipo = POLO`), 5 cursos PRESENCIAL na sede e 5 EAD no polo (matriz 2026.1 com extensão ≥ 10%, 1 professor e 2 alunos cada, turma do período corrente com `cursoId`, diários, faturas). Personas canônicas: `professor@opensga.dev` e `aluno@opensga.dev`. `PrecoCurso` via Stripe quando `STRIPE_SECRET_KEY` existir. Rodar `npx prisma db seed --config prisma7.config.ts`.
 
 ### F. Precificação e Stripe
 

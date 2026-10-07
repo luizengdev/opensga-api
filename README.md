@@ -116,7 +116,7 @@ Login: `POST /api/v1/auth/login` com `{ "identificador", "senha" }` (e-mail, CPF
 | `PROFESSOR` | `professor@opensga.dev` | `Professor@123456` |
 | `ALUNO` | `aluno@opensga.dev` | `Aluno@123456` |
 
-O seed monta campi `SEDE-REC` / `POLO-EAD`, 10 cursos (presencial + EAD), matrizes 2026.1, turmas, diários e faturas.
+O seed monta `SEDE-REC` (campus presencial) e `POLO-EAD` (polo EAD), 10 cursos, matrizes 2026.1, turmas por curso, diários e faturas.
 
 ---
 
