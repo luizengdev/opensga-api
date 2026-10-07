@@ -112,9 +112,9 @@ Rodar seed: `npx prisma db seed --config prisma7.config.ts`.
 | Docente         | `professor@opensga.dev`, CPF `111.111.111-11` ou matrícula `PROF-001` | `Professor@123456` | `PROFESSOR` | Turmas próprias, diário, dashboard, avaliar |
 | Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001`          | `Aluno@123456`     | `ALUNO`     | Login, `/me` e portal (`/portal/contexto`, `/portal/documentos`, `/portal/ouvidoria`) |
 
-Dados acadêmicos criados pelo seed: `SEDE-REC` (`tipo = CAMPI`, 5 cursos PRESENCIAL) e `POLO-EAD` (`tipo = POLO`, 5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** com `cursoId` e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem AV/AVS, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`. Quatro `ModeloDocumento` ativos (declaração, histórico, quitação, carteirinha); o seed não sobrescreve texto já editado pela Secretaria.
+Dados acadêmicos criados pelo seed: `SEDE-REC` (`tipo = CAMPI`, 5 cursos PRESENCIAL) e `POLO-EAD` (`tipo = POLO`, 5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** com `cursoId` e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem AV/AVS, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`. Quatro `ModeloDocumento` ativos (declaração, histórico, quitação, carteirinha); o seed não sobrescreve texto já editado pela Secretaria. Uma linha `ParametroInstitucional` (id fixo) com período automático, cortes 6,0 / 5,0, faltas 25% e extensão mínima 10%; o seed não sobrescreve edições da Secretaria.
 
-Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`getMonth() < 6`), senão `2`. Dashboard e seed usam a mesma regra.
+Período institucional: `GET /parametrizacoes`. Se `periodoAutomatico` é true, ano civil atual e semestre `1` de janeiro a junho, senão `2`. Se false, usa `anoLetivo`/`semestreLetivo` gravados. Dashboard sem query, header e seed seguem esse período.
 
 ---
 
@@ -137,6 +137,8 @@ Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`get
 | `GET /dashboard/professor`                                                           |         |  403  |        sim         |         403         |
 | `GET /portal/contexto`, `GET /portal/documentos`, `POST /portal/documentos/emitir`, `POST /portal/ouvidoria` |         |  403  |        403         |         sim         |
 | `GET /documentos/modelos`, `PATCH /documentos/modelos/:id`                            |         |  sim  |        403         |         403         |
+| `GET /parametrizacoes`                                                               |         |  sim  |        sim         |         sim         |
+| `PATCH /parametrizacoes`                                                             |         |  sim  |        403         |         403         |
 
 **CA-RBAC-01.** Sem `Authorization`, toda rota protegida retorna 401.  
 **CA-RBAC-02.** Token de professor em rota ADMIN-only retorna 403.  
@@ -660,7 +662,7 @@ Cenário: Disciplina estranha à matriz
 
 Entrada: `diarioClasseId` + opcionais `notaAv`, `notaAvs`, `notaAv3` (0–10), `totalFaltas` (≥ 0). Campos omitidos preservam o valor gravado.
 
-Seja `NS = MAX(AV, AVS)` (nota nula é ignorada) e `limiteFaltas = floor(chTotal × 0,25)`.
+Seja `NS = MAX(AV, AVS)` (nota nula é ignorada). Cortes e `limiteFaltas = floor(chTotal × percentual/100)` vêm de `GET /parametrizacoes` (seed: aprovação direta 6,0; MF 5,0; faltas 25%).
 O PATCH **não** fecha o semestre: persiste lançamento, `notaSemestral` e `habilitaAv3`. `chCumprida` e `statusDisciplina` finais vêm de `POST /diario/fechar-semestre`.
 
 | Condição no PATCH                         | `notaSemestral` | `habilitaAv3` | `statusDisciplina` |
@@ -734,14 +736,14 @@ Cenário: Professor de outra turma tenta lançar
 
 ## 11. Dashboards
 
-Período: query `anoLetivo` e `semestreLetivo` opcionais; default = período corrente (seção 4).
+Período: query `anoLetivo` e `semestreLetivo` opcionais; default = período institucional (`GET /parametrizacoes`, seção 4).
 
 ### Admin — `GET /dashboard/admin`
 
 Corpo: `matriculasPorStatus[]` (todos os valores de `StatusMatricula`, quantidade 0 se vazio), `turmasNoPeriodo`, `ocupacaoMedia` (média de diários/capacidade × 100, duas casas), `faturasPendentes`, `reclamacoesAbertas`.
 
 **CA-DASH-01.** ADMIN 200; PROFESSOR 403.  
-**CA-DASH-02.** Sem query, `anoLetivo`/`semestreLetivo` batem com a regra do período corrente.  
+**CA-DASH-02.** Sem query, `anoLetivo`/`semestreLetivo` batem com o período institucional vigente.  
 **CA-DASH-03.** Após o seed, `turmasNoPeriodo ≥ 1` e existe status `ATIVO` ≥ 1.  
 **CA-DASH-04.** Query de um período sem turmas → `turmasNoPeriodo = 0` e `ocupacaoMedia = 0`.
 
@@ -766,6 +768,42 @@ Cenário: Dashboard do professor
   Quando envio GET /api/v1/dashboard/professor
   Então a resposta é 200
   E lancamentosPendentes é maior que 0
+```
+
+### 11.3 Parametrizações — `GET /parametrizacoes` e `PATCH /parametrizacoes`
+
+Singleton institucional. GET autenticado (todos os papéis). PATCH só `ADMIN`.
+
+Campos: identidade (`nomeIes`, `siglaIes`, `mantenedora`, `cnpj`), período (`periodoAutomatico`, `anoLetivo`, `semestreLetivo` resolvidos no GET), avaliação (`corteAprovacaoDireta`, `corteMediaFinal`, `limiteFaltasPercentual`) e `percentualMinimoExtensao` (≥ 10). Pisos do Decreto 12.456 não são editáveis. Emissão de documentos interpola `{{ies.nome}}`, `{{ies.sigla}}`, `{{ies.mantenedora}}`, `{{ies.cnpj}}`.
+
+**CA-PAR-01.** GET com JWT de qualquer papel autenticado → 200 com os campos acima.  
+**CA-PAR-02.** PATCH ADMIN com `periodoAutomatico: false`, `anoLetivo` e `semestreLetivo` → 200; dashboard sem query passa a usar esse período.  
+**CA-PAR-03.** PATCH ADMIN com `corteAprovacaoDireta` menor que `corteMediaFinal` → 400.  
+**CA-PAR-04.** PATCH professor ou aluno → 403.  
+**CA-PAR-05.** `percentualMinimoExtensao` &lt; 10 → 400.
+
+```gherkin
+@QA-PAR-01
+Cenário: Secretaria lê as parametrizações
+  Dado um JWT de ADMIN
+  Quando envio GET /api/v1/parametrizacoes
+  Então a resposta é 200
+  E corteAprovacaoDireta é 6 no seed intacto
+
+@QA-PAR-02
+Cenário: Virada manual de semestre
+  Dado um JWT de ADMIN
+  Quando envio PATCH /parametrizacoes com periodoAutomatico false, anoLetivo 2026 e semestreLetivo 1
+  Então a resposta é 200
+  E anoLetivo é 2026
+  E semestreLetivo é 1
+  E GET /dashboard/admin sem query devolve o mesmo período
+
+@QA-PAR-04
+Cenário: Professor não altera parametrizações
+  Dado um JWT de PROFESSOR
+  Quando envio PATCH /parametrizacoes
+  Então a resposta é 403
 ```
 
 ---
@@ -1028,6 +1066,7 @@ Ambientes: `local` (`baseUrl=http://localhost:3333`) e, depois, `staging`.
 | QA-DEL-*                                         | Integridade      | P1         |
 | QA-USR-_, QA-ACA-_, QA-FIN-_, QA-COM-_, QA-OUV-* | CRUD             | P1         |
 | QA-DOC-*                                         | Documentos       | P1         |
+| QA-PAR-*                                         | Parametrizações  | P1         |
 | QA-E2E-01                                        | Regressão        | P0         |
 | Smoke seção 16                                   | Gate             | P0         |
 

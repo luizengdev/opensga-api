@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import {Role, StatusDisciplina, StatusFatura, StatusMatricula, TipoDocumento} from "../../generated/prisma/enums.js";
 import {dayjs} from "../../lib/dayjs.js";
 import {findPortalActor} from "../portal/portal-repository.js";
+import {fetchParametrizacoes} from "../settings/settings-service.js";
 import {
   findAlunoParaEmissao,
   findModeloDocumentoAtivoByTipo,
@@ -208,6 +209,7 @@ export const emitirDocumentoPortal = async ({
   const agora = dayjs();
   const dataEmissao = formatDataEmissao(agora);
   const codigoAutenticacao = `AUT-${aluno.ra.replaceAll(/\D/g, "").slice(-8)}-${crypto.randomInt(100000, 1_000_000)}`;
+  const ies = await fetchParametrizacoes();
 
   await insertEmissaoDocumento({
     modeloId: modelo.id,
@@ -230,6 +232,10 @@ export const emitirDocumentoPortal = async ({
     codigoAutenticacao,
     chIntegralizada: String(chIntegralizada),
     chTotalCurso: String(chTotalCurso),
+    "ies.nome": ies.nomeIes,
+    "ies.sigla": ies.siglaIes,
+    "ies.mantenedora": ies.mantenedora,
+    "ies.cnpj": ies.cnpj,
   };
 
   const diariosPorDisciplina = new Map(

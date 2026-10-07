@@ -93,9 +93,11 @@ export const validateModalidadeDisciplina = ({
 export const collectViolacoesMatriz = ({
   modalidade,
   componentes,
+  percentualMinimoExtensao = 10,
 }: {
   modalidade: ModalidadeCurso;
   componentes: IComponenteAuditoria[];
+  percentualMinimoExtensao?: number;
 }) => {
   const violacoes = componentes.flatMap((componente) => {
     const daDisciplina: IViolacaoRegulatoria[] = [];
@@ -140,12 +142,12 @@ export const collectViolacoesMatriz = ({
     .reduce((acc, componente) => acc + componente.chTotal, 0);
   const percentualExtensao = percentualDe(chExtensaoPorTipo, chTotalGeral);
 
-  if (percentualExtensao < 10) {
+  if (percentualExtensao < percentualMinimoExtensao) {
     violacoes.push({
       codigo: "EXTENSAO_10",
-      mensagem: `Componentes do tipo Extensão representam ${percentualExtensao}% da CH da matriz (mínimo legal 10%).`,
+      mensagem: `Componentes do tipo Extensão representam ${percentualExtensao}% da CH da matriz (mínimo institucional ${percentualMinimoExtensao}%).`,
     });
   }
 
-  return {violacoes, chTotalGeral, chExtensaoPorTipo, percentualExtensao};
+  return {violacoes, chTotalGeral, chExtensaoPorTipo, percentualExtensao, percentualMinimoExtensao};
 };

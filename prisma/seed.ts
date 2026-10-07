@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import {dayjs} from "../src/lib/dayjs.js";
 import {prisma} from "../src/lib/db.js";
 import {env} from "../src/lib/env.js";
+import {PARAMETRO_INSTITUCIONAL_ID, periodoLetivoDoCalendario} from "../src/lib/periodo-letivo.js";
 import {createStripeTuitionCatalog} from "../src/lib/stripe.js";
 
 interface IAlunoSeed {
@@ -535,9 +536,7 @@ async function main() {
     chExtensao: 40,
   });
 
-  const agora = dayjs();
-  const anoLetivo = agora.year();
-  const semestreLetivo = agora.month() < 6 ? 1 : 2;
+  const {anoLetivo, semestreLetivo} = periodoLetivoDoCalendario();
   const semestreIngresso = `${anoLetivo}.${semestreLetivo}`;
 
   for (const item of cursosSeed) {
@@ -810,6 +809,25 @@ async function main() {
       create: modelo,
     });
   }
+
+  await prisma.parametroInstitucional.upsert({
+    where: {id: PARAMETRO_INSTITUCIONAL_ID},
+    update: {},
+    create: {
+      id: PARAMETRO_INSTITUCIONAL_ID,
+      nomeIes: "OpenSGA",
+      siglaIes: "OSGA",
+      mantenedora: "",
+      cnpj: "",
+      anoLetivo,
+      semestreLetivo,
+      periodoAutomatico: true,
+      corteAprovacaoDireta: 6,
+      corteMediaFinal: 5,
+      limiteFaltasPercentual: 25,
+      percentualMinimoExtensao: 10,
+    },
+  });
 
   console.log(`✅ Admin: ${admin.email} (Senha: Admin@123456)`);
   console.log(`✅ Campi: ${sede.codigoPolo}, ${poloEad.codigoPolo}`);

@@ -77,7 +77,8 @@ opensga-api/
     │   ├── financial/              # Faturas acadêmicas, Checkout de matrícula e webhooks Stripe
     │   ├── communications/         # Comunicados institucionais e ouvidoria
     │   ├── documents/              # Modelos oficiais e emissão no portal do aluno
-    │   └── dashboard/              # KPIs leves ADMIN e PROFESSOR
+    │   ├── dashboard/              # KPIs leves ADMIN e PROFESSOR
+    │   └── settings/               # Parametrizações institucionais (período, notas, IES)
     └── index.ts                    # Bootstrap, /health e error handler HTTP
 ```
 
@@ -98,7 +99,8 @@ Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 - `POST /webhooks/stripe` — webhook Stripe (raw body, público, fora de `/api/v1`)
 - `/comunicados` e `/ouvidoria/reclamacoes` — mural e ouvidoria (`ADMIN`)
 - `/documentos/modelos` — catálogo de certidões oficiais (`ADMIN`): `GET` lista; `PATCH /documentos/modelos/:id` texto, finalidade e `ativo`
-- `/dashboard/admin` (`ADMIN`) e `/dashboard/professor` (`PROFESSOR`) — resumos do período (`anoLetivo` / `semestreLetivo` opcionais)
+- `/dashboard/admin` (`ADMIN`) e `/dashboard/professor` (`PROFESSOR`) — resumos do período (`anoLetivo` / `semestreLetivo` opcionais; default = `GET /parametrizacoes`)
+- `GET /parametrizacoes` (autenticado) e `PATCH /parametrizacoes` (`ADMIN`) — período institucional, regulamento de avaliação, identidade da IES e meta de extensão (≥ 10%)
 - `GET /portal/contexto` (`ALUNO` + `RESPONSAVEL`) — contexto do aluno ou dependente (`alunoId` opcional); filtra diários, faturas, matriz, comunicados e protocolos próprios
 - `GET /portal/documentos` (`ALUNO` + `RESPONSAVEL`) — modelos `ativo` liberados pela Secretaria
 - `POST /portal/documentos/emitir` (`ALUNO` + `RESPONSAVEL`) — interpola o `corpo` do modelo; declaração/carteirinha exigem matrícula `ATIVO`; quitação 409 se fatura `ATRASADA`
@@ -177,7 +179,7 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 ### B. Conformidade Regulatória MEC
 
-- **Curricularização da Extensão (Resolução CNE/CES 7/2018)**: soma da `chTotal` dos componentes `tipo = EXTENSAO` ≥ 10% da CH da matriz. `GET /academic/matrizes/:id/auditoria` responde **409** se ficar abaixo.
+- **Curricularização da Extensão (Resolução CNE/CES 7/2018)**: soma da `chTotal` dos componentes `tipo = EXTENSAO` ≥ `percentualMinimoExtensao` da CH da matriz (piso legal 10%, configurável em `PATCH /parametrizacoes`). `GET /academic/matrizes/:id/auditoria` responde **409** se ficar abaixo.
 - **Multimodalidade (Decreto nº 12.456/2026)**: em cada disciplina, `chTotal = chPresencial + chSincrona + chAssincrona`.
   - PRESENCIAL: presencial ≥ 70% da CH.
   - SEMIPRESENCIAL: presencial ≥ 30% **e** síncrona ≥ 20%; assíncrona ≤ 50%.
@@ -186,12 +188,12 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 ### C. Avaliação e Rendimento Acadêmico
 
-- **Nota semestral**: $\text{NS} = \max(AV, AVS)$ (nulos ignorados). Escala 0,0–10,0.
-- **PATCH `/diario/avaliar`**: body `{ diarioClasseId, notaAv?, notaAvs?, notaAv3?, totalFaltas? }`. Campos omitidos preservam o valor. Recalcula `notaSemestral` e `habilitaAv3` (`true` se frequência regular e NS < 6,0). Não integraliza CH. AV3 sem flag → 400. Semestre já fechado → 409. Resposta inclui `statusDisciplina` (`EM_ABERTO` | `APROVADO` | `RF` | `RN`) e `semestreFechado`.
-- **Aprovação direta** (no fechamento): NS ≥ 6,0 e faltas ≤ 25% da `chTotal`.
-- **AV3**: se NS < 6,0 e frequência regular, `MF = (NS + AV3) / 2`. Aprovado se MF ≥ 5,0; senão `RN`.
-- **RF soberano**: faltas > 25% da CH → `RF`, `chCumprida = 0`, ignora notas.
-- **POST `/diario/fechar-semestre`**: body `{ turmaId }`. Transação atômica na turma: (1) RF; (2) NS ≥ 6 → APROVADO + CH; (3) MF com AV3; (4) NS ausente ou AV3 obrigatória faltando → 409 e **nenhum** diário é persistido. `chCumprida` só entra no histórico se `statusDisciplina = APROVADO`.
+- **Nota semestral**: $\text{NS} = \max(AV, AVS)$ (nulos ignorados). Escala 0,0–10,0. Cortes e limite de faltas vêm de `GET /parametrizacoes` (padrão seed: NS ≥ 6,0; MF ≥ 5,0; faltas 25%).
+- **PATCH `/diario/avaliar`**: body `{ diarioClasseId, notaAv?, notaAvs?, notaAv3?, totalFaltas? }`. Campos omitidos preservam o valor. Recalcula `notaSemestral` e `habilitaAv3` (`true` se frequência regular e NS < corte de aprovação direta). Não integraliza CH. AV3 sem flag → 400. Semestre já fechado → 409. Resposta inclui `statusDisciplina` (`EM_ABERTO` | `APROVADO` | `RF` | `RN`) e `semestreFechado`.
+- **Aprovação direta** (no fechamento): NS ≥ corte de aprovação direta e faltas ≤ percentual configurado da `chTotal`.
+- **AV3**: se NS < corte de aprovação direta e frequência regular, `MF = (NS + AV3) / 2`. Aprovado se MF ≥ corte da média final; senão `RN`.
+- **RF soberano**: faltas > limite percentual da CH → `RF`, `chCumprida = 0`, ignora notas.
+- **POST `/diario/fechar-semestre`**: body `{ turmaId }`. Transação atômica na turma: (1) RF; (2) NS ≥ corte → APROVADO + CH; (3) MF com AV3; (4) NS ausente ou AV3 obrigatória faltando → 409 e **nenhum** diário é persistido. `chCumprida` só entra no histórico se `statusDisciplina = APROVADO`.
 - Professor titular é validado em `PATCH /diario/avaliar` e `POST /diario/fechar-semestre`.
 
 ### D. Integridade referencial e exclusão ADMIN
@@ -203,13 +205,13 @@ Definir `onDelete` explicitamente no Prisma. Antes de `delete`, o service conta 
 - **SetNull**: `Aluno.responsavelId` ao apagar o responsável.
 - Não apagar o próprio usuário autenticado. Apagar matrícula não apaga o aluno.
 - **Transferência interna** (`ADMIN`): `GET /matriculas/:id/transferencia-preview` e `POST /matriculas/:id/transferencia` com `{ cursoId, matrizCurricularId }`. Origem `ATIVO` ou `TRANCADO`; destino outro `cursoId` (curso distinto ou o mesmo programa em outro polo/campus). Mesmo `nome` de curso → move todos os diários; senão só `disciplinaId` presente na matriz de destino. Origem fica `TRANSFERIDO`; destino nasce `ATIVO` (RA, período e semestre de ingresso preservados). 409 se já houver matrícula em aberto no destino.
-- **Documentos oficiais**: catálogo `ModeloDocumento` (um por `TipoDocumento`). ADMIN edita `titulo`, `descricao`, `finalidade`, `corpo` e `ativo` em `PATCH /documentos/modelos/:id`. Portal lista só ativos e emite com placeholders `{{aluno.nome}}`, `{{aluno.cpf}}`, `{{aluno.ra}}`, `{{curso.nome}}`, `{{curso.modalidade}}`, `{{campus.nome}}`, `{{campus.codigoPolo}}`, `{{periodoAtual}}`, `{{semestreIngresso}}`, `{{dataEmissao}}`, `{{codigoAutenticacao}}`, `{{chIntegralizada}}`, `{{chTotalCurso}}`. Histórico, disciplinas do período e carteirinha usam os dados estruturados da emissão. Impressão no browser (`window.print()`), sem PDF no servidor.
+- **Documentos oficiais**: catálogo `ModeloDocumento` (um por `TipoDocumento`). ADMIN edita `titulo`, `descricao`, `finalidade`, `corpo` e `ativo` em `PATCH /documentos/modelos/:id`. Portal lista só ativos e emite com placeholders `{{aluno.nome}}`, `{{aluno.cpf}}`, `{{aluno.ra}}`, `{{curso.nome}}`, `{{curso.modalidade}}`, `{{campus.nome}}`, `{{campus.codigoPolo}}`, `{{periodoAtual}}`, `{{semestreIngresso}}`, `{{dataEmissao}}`, `{{codigoAutenticacao}}`, `{{chIntegralizada}}`, `{{chTotalCurso}}`, `{{ies.nome}}`, `{{ies.sigla}}`, `{{ies.mantenedora}}`, `{{ies.cnpj}}`. Histórico, disciplinas do período e carteirinha usam os dados estruturados da emissão. Impressão no browser (`window.print()`), sem PDF no servidor.
 
 ### E. Dashboards internos
 
 - `GET /dashboard/admin`: matrículas por status, turmas do período, ocupação média, faturas `PENDENTE`, reclamações `ABERTO`.
 - `GET /dashboard/professor`: turmas do período com `quantidadeDiarios`/`capacidade` e contagem de diários sem nota semestral (AV/AVS).
-- Período padrão: ano corrente e semestre `1` de janeiro a junho, `2` no restante do ano. Aceitar query `anoLetivo` e `semestreLetivo`.
+- Período padrão: `GET /parametrizacoes` (calendário se `periodoAutomatico`, senão o par gravado). Aceitar query `anoLetivo` e `semestreLetivo`.
 - Seed de demo (`prisma/seed.ts`): admin, `SEDE-REC` (`tipo = CAMPI`) e `POLO-EAD` (`tipo = POLO`), 5 cursos PRESENCIAL na sede e 5 EAD no polo (matriz 2026.1 com extensão ≥ 10%, 1 professor e 2 alunos cada, turma do período corrente com `cursoId`, diários, faturas). Personas canônicas: `professor@opensga.dev` e `aluno@opensga.dev`. `PrecoCurso` via Stripe quando `STRIPE_SECRET_KEY` existir. Rodar `npx prisma db seed --config prisma7.config.ts`.
 
 ### F. Precificação e Stripe

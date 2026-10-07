@@ -409,3 +409,22 @@ model EmissaoDocumento {
 
   @@map("emissoes_documento")
 }
+
+model ParametroInstitucional {
+  id                       String   @id @db.Uuid
+  nomeIes                  String   @db.VarChar(120)
+  siglaIes                 String   @db.VarChar(20)
+  mantenedora              String   @default("") @db.VarChar(200)
+  cnpj                     String   @default("") @db.VarChar(18)
+  anoLetivo                Int
+  semestreLetivo           Int
+  periodoAutomatico        Boolean  @default(true)
+  corteAprovacaoDireta     Decimal  @default(6.00) @db.Decimal(4, 2)
+  corteMediaFinal          Decimal  @default(5.00) @db.Decimal(4, 2)
+  limiteFaltasPercentual   Decimal  @default(25.00) @db.Decimal(5, 2)
+  percentualMinimoExtensao Decimal  @default(10.00) @db.Decimal(5, 2)
+  criadoEm                 DateTime @default(now()) @db.Timestamptz()
+  atualizadoEm             DateTime @updatedAt @db.Timestamptz()
+
+  @@map("parametros_institucionais")
+}

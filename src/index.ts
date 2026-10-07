@@ -18,6 +18,7 @@ import {checkoutRoutes, financialRoutes} from "./modules/financial/financial-rou
 import {stripeWebhookRoutes} from "./modules/financial/stripe-webhook-route.js";
 import {gradingRoutes} from "./modules/grading/grading-route.js";
 import {portalRoutes} from "./modules/portal/portal-route.js";
+import {settingsRoutes} from "./modules/settings/settings-route.js";
 import {usersRoutes} from "./modules/users/users-route.js";
 import {authPlugin} from "./plugins/authenticate.js";
 
@@ -137,6 +138,7 @@ await app.register(stripeWebhookRoutes);
 await app.register(communicationsRoutes, {prefix: "/api/v1"});
 await app.register(documentsRoutes, {prefix: "/api/v1"});
 await app.register(dashboardRoutes, {prefix: "/api/v1"});
+await app.register(settingsRoutes, {prefix: "/api/v1"});
 await app.register(portalRoutes, {prefix: "/api/v1"});
 
 app.get("/health", async () => {

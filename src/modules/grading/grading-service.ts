@@ -1,5 +1,6 @@
 import {Prisma} from "../../generated/prisma/client.js";
 import {Role, StatusDisciplina, StatusMatricula} from "../../generated/prisma/enums.js";
+import {fetchParametrizacoes} from "../settings/settings-service.js";
 import {evaluateFechamento, evaluateLancamento} from "./grading-engine.js";
 import {
   closeDiariosAtomically,
@@ -255,20 +256,33 @@ export const calculateAndSaveGrades = async ({
     throw new GradingError("A disciplina desta turma não compõe a matriz curricular vinculada à matrícula.", 400);
   }
 
+  const parametros = await fetchParametrizacoes();
+  const regulamento = {
+    corteAprovacaoDireta: parametros.corteAprovacaoDireta,
+    corteMediaFinal: parametros.corteMediaFinal,
+    limiteFaltasPercentual: parametros.limiteFaltasPercentual,
+  };
   const notaAv = resolveNota(input.notaAv, diario.notaAv);
   const notaAvs = resolveNota(input.notaAvs, diario.notaAvs);
   const notaAv3 = resolveNota(input.notaAv3, diario.notaAv3);
   const faltas = input.totalFaltas !== undefined ? input.totalFaltas : diario.totalFaltas;
-  const lancamento = evaluateLancamento({
-    notaAv,
-    notaAvs,
-    notaAv3,
-    totalFaltas: faltas,
-    chTotal: componenteMatriz.chTotal,
-  });
+  const lancamento = evaluateLancamento(
+    {
+      notaAv,
+      notaAvs,
+      notaAv3,
+      totalFaltas: faltas,
+      chTotal: componenteMatriz.chTotal,
+    },
+    regulamento,
+  );
 
   if (input.notaAv3 !== undefined && notaAv3 !== null && !lancamento.habilitaAv3) {
-    throw new GradingError("A AV3 só pode ser lançada quando a nota semestral for inferior a 6,0 e a frequência for regular.", 400);
+    const corte = regulamento.corteAprovacaoDireta.toFixed(1).replace(".", ",");
+    throw new GradingError(
+      `A AV3 só pode ser lançada quando a nota semestral for inferior a ${corte} e a frequência for regular.`,
+      400,
+    );
   }
 
   const saved = await saveDiarioLancamento({
@@ -309,6 +323,13 @@ export const closeTurmaSemester = async ({
     throw new GradingError("A turma não possui diários para fechamento.", 400);
   }
 
+  const parametros = await fetchParametrizacoes();
+  const regulamento = {
+    corteAprovacaoDireta: parametros.corteAprovacaoDireta,
+    corteMediaFinal: parametros.corteMediaFinal,
+    limiteFaltasPercentual: parametros.limiteFaltasPercentual,
+  };
+
   const pendencias = diarios.flatMap((diario) => {
     const componenteMatriz = diario.matricula.matrizCurricular.componentes.find(
       (componente) => componente.disciplinaId === diario.turma.disciplinaId,
@@ -318,13 +339,16 @@ export const closeTurmaSemester = async ({
       return [`Diário ${diario.id}: disciplina fora da matriz.`];
     }
 
-    const fechamento = evaluateFechamento({
-      notaAv: decimalToNumber(diario.notaAv),
-      notaAvs: decimalToNumber(diario.notaAvs),
-      notaAv3: decimalToNumber(diario.notaAv3),
-      totalFaltas: diario.totalFaltas,
-      chTotal: componenteMatriz.chTotal,
-    });
+    const fechamento = evaluateFechamento(
+      {
+        notaAv: decimalToNumber(diario.notaAv),
+        notaAvs: decimalToNumber(diario.notaAvs),
+        notaAv3: decimalToNumber(diario.notaAv3),
+        totalFaltas: diario.totalFaltas,
+        chTotal: componenteMatriz.chTotal,
+      },
+      regulamento,
+    );
 
     if (fechamento.statusDisciplina === StatusDisciplina.EM_ABERTO) {
       if (fechamento.notaSemestral === null) {
@@ -350,13 +374,16 @@ export const closeTurmaSemester = async ({
       throw new GradingError("A disciplina desta turma não compõe a matriz curricular vinculada à matrícula.", 400);
     }
 
-    const fechamento = evaluateFechamento({
-      notaAv: decimalToNumber(diario.notaAv),
-      notaAvs: decimalToNumber(diario.notaAvs),
-      notaAv3: decimalToNumber(diario.notaAv3),
-      totalFaltas: diario.totalFaltas,
-      chTotal: componenteMatriz.chTotal,
-    });
+    const fechamento = evaluateFechamento(
+      {
+        notaAv: decimalToNumber(diario.notaAv),
+        notaAvs: decimalToNumber(diario.notaAvs),
+        notaAv3: decimalToNumber(diario.notaAv3),
+        totalFaltas: diario.totalFaltas,
+        chTotal: componenteMatriz.chTotal,
+      },
+      regulamento,
+    );
 
     return {
       id: diario.id,

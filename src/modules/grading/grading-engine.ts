@@ -8,6 +8,12 @@ export interface ILancamentoAcademico {
   chTotal: number;
 }
 
+export interface IRegulamentoAvaliacao {
+  corteAprovacaoDireta: number;
+  corteMediaFinal: number;
+  limiteFaltasPercentual: number;
+}
+
 export interface IResultadoLancamento {
   notaSemestral: number | null;
   habilitaAv3: boolean;
@@ -23,9 +29,18 @@ export interface IResultadoFechamento {
   chCumprida: number;
 }
 
+export const REGULAMENTO_AVALIACAO_PADRAO: IRegulamentoAvaliacao = {
+  corteAprovacaoDireta: 6,
+  corteMediaFinal: 5,
+  limiteFaltasPercentual: 25,
+};
+
 const roundNota = (value: number) => Number(value.toFixed(2));
 
-export const limiteFaltasDaDisciplina = (chTotal: number) => Math.floor(chTotal * 0.25);
+export const limiteFaltasDaDisciplina = (
+  chTotal: number,
+  percentual = REGULAMENTO_AVALIACAO_PADRAO.limiteFaltasPercentual,
+) => Math.floor(chTotal * (percentual / 100));
 
 export const computeNotaSemestral = (notaAv: number | null, notaAvs: number | null) => {
   if (notaAv === null && notaAvs === null) {
@@ -43,17 +58,24 @@ export const computeNotaSemestral = (notaAv: number | null, notaAvs: number | nu
   return roundNota(Math.max(notaAv, notaAvs));
 };
 
-export const evaluateLancamento = (input: ILancamentoAcademico): IResultadoLancamento => {
-  const limiteFaltas = limiteFaltasDaDisciplina(input.chTotal);
+export const evaluateLancamento = (
+  input: ILancamentoAcademico,
+  regulamento: IRegulamentoAvaliacao = REGULAMENTO_AVALIACAO_PADRAO,
+): IResultadoLancamento => {
+  const limiteFaltas = limiteFaltasDaDisciplina(input.chTotal, regulamento.limiteFaltasPercentual);
   const reprovadoPorFalta = input.totalFaltas > limiteFaltas;
   const notaSemestral = computeNotaSemestral(input.notaAv, input.notaAvs);
-  const habilitaAv3 = !reprovadoPorFalta && notaSemestral !== null && notaSemestral < 6;
+  const habilitaAv3 =
+    !reprovadoPorFalta && notaSemestral !== null && notaSemestral < regulamento.corteAprovacaoDireta;
 
   return {notaSemestral, habilitaAv3, limiteFaltas, reprovadoPorFalta};
 };
 
-export const evaluateFechamento = (input: ILancamentoAcademico): IResultadoFechamento => {
-  const lancamento = evaluateLancamento(input);
+export const evaluateFechamento = (
+  input: ILancamentoAcademico,
+  regulamento: IRegulamentoAvaliacao = REGULAMENTO_AVALIACAO_PADRAO,
+): IResultadoFechamento => {
+  const lancamento = evaluateLancamento(input, regulamento);
 
   if (lancamento.reprovadoPorFalta) {
     return {
@@ -75,7 +97,7 @@ export const evaluateFechamento = (input: ILancamentoAcademico): IResultadoFecha
     };
   }
 
-  if (lancamento.notaSemestral >= 6) {
+  if (lancamento.notaSemestral >= regulamento.corteAprovacaoDireta) {
     return {
       notaSemestral: lancamento.notaSemestral,
       mediaFinal: lancamento.notaSemestral,
@@ -96,7 +118,7 @@ export const evaluateFechamento = (input: ILancamentoAcademico): IResultadoFecha
   }
 
   const mediaFinal = roundNota((lancamento.notaSemestral + input.notaAv3) / 2);
-  const aprovado = mediaFinal >= 5;
+  const aprovado = mediaFinal >= regulamento.corteMediaFinal;
 
   return {
     notaSemestral: lancamento.notaSemestral,

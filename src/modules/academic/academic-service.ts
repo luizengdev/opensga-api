@@ -42,6 +42,7 @@ import {
   updateMatrizById,
   updateTurmaById,
 } from "./academic-repository.js";
+import {fetchParametrizacoes} from "../settings/settings-service.js";
 import {collectViolacoesMatriz} from "./mec-2026.js";
 import type {
   IAddComponenteMatrizInput,
@@ -530,9 +531,11 @@ export const auditMatrizForMecCompliance = async ({
     {chTotal: 0, chExtensao: 0, chPresencial: 0, chSincrona: 0, chAssincrona: 0},
   );
 
-  const {violacoes, chExtensaoPorTipo, percentualExtensao} = collectViolacoesMatriz({
+  const parametros = await fetchParametrizacoes();
+  const {violacoes, chExtensaoPorTipo, percentualExtensao, percentualMinimoExtensao} = collectViolacoesMatriz({
     modalidade: matriz.curso.modalidade,
     componentes: matriz.componentes,
+    percentualMinimoExtensao: parametros.percentualMinimoExtensao,
   });
 
   return {
@@ -547,7 +550,8 @@ export const auditMatrizForMecCompliance = async ({
     chExtensaoTotal: totais.chExtensao,
     chExtensaoPorTipo,
     percentualExtensao,
-    cumpreRegra10PorcentoExtensao: percentualExtensao >= 10,
+    percentualMinimoExtensao,
+    cumpreRegra10PorcentoExtensao: percentualExtensao >= percentualMinimoExtensao,
     chPresencialTotal: totais.chPresencial,
     percentualPresencial: percentualDe(totais.chPresencial, totais.chTotal),
     chSincronaTotal: totais.chSincrona,

@@ -240,6 +240,7 @@ export const auditoriaMecResponseSchema = z.object({
   chExtensaoTotal: z.number().int(),
   chExtensaoPorTipo: z.number().int(),
   percentualExtensao: z.number(),
+  percentualMinimoExtensao: z.number(),
   cumpreRegra10PorcentoExtensao: z.boolean(),
   chPresencialTotal: z.number().int(),
   percentualPresencial: z.number(),
