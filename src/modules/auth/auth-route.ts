@@ -2,7 +2,12 @@ import {FastifyInstance} from "fastify";
 import {ZodTypeProvider} from "fastify-type-provider-zod";
 
 import {Role} from "../../generated/prisma/client.js";
-import {changePasswordHandler, getMeHandler, loginHandler} from "./auth-controller.js";
+import {
+  changePasswordHandler,
+  getMeHandler,
+  loginHandler,
+  renewSessionHandler,
+} from "./auth-controller.js";
 import {
   changePasswordSchema,
   errorResponseSchema,
@@ -10,6 +15,7 @@ import {
   loginSchema,
   meResponseSchema,
   messageResponseSchema,
+  renewSessionResponseSchema,
 } from "./auth-schemas.js";
 
 export const authRoutes = async (app: FastifyInstance): Promise<void> => {
@@ -49,6 +55,23 @@ export const authRoutes = async (app: FastifyInstance): Promise<void> => {
       },
     },
     getMeHandler,
+  );
+
+  typedApp.post(
+    "/auth/renovar",
+    {
+      onRequest: [app.authenticate],
+      schema: {
+        tags: ["Autenticação"],
+        summary: "Renovar o JWT da sessão autenticada com a janela de inatividade do papel",
+        security: [{bearerAuth: []}],
+        response: {
+          200: renewSessionResponseSchema,
+          401: errorResponseSchema,
+        },
+      },
+    },
+    renewSessionHandler,
   );
 
   typedApp.patch(

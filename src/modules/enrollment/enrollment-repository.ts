@@ -315,3 +315,150 @@ export const updateEnrollmentStatus = async ({
     throw error;
   }
 };
+
+const transferenciaCampusSelect = {
+  id: true,
+  nome: true,
+  codigoPolo: true,
+  tipo: true,
+} as const;
+
+export const findEnrollmentForTransfer = async (id: string) => {
+  return prisma.matricula.findUnique({
+    where: {id},
+    select: {
+      id: true,
+      alunoId: true,
+      status: true,
+      periodoAtual: true,
+      semestreIngresso: true,
+      aluno: {
+        select: {
+          ra: true,
+          user: {select: {nome: true}},
+        },
+      },
+      curso: {
+        select: {
+          id: true,
+          nome: true,
+          modalidade: true,
+          campus: {select: transferenciaCampusSelect},
+        },
+      },
+      matrizCurricular: {select: {id: true, nome: true, anoVigencia: true}},
+      diarios: {
+        select: {
+          id: true,
+          statusDisciplina: true,
+          turma: {
+            select: {
+              disciplinaId: true,
+              disciplina: {select: {id: true, codigo: true, nome: true}},
+            },
+          },
+        },
+        orderBy: {turma: {disciplina: {nome: "asc"}}},
+      },
+    },
+  });
+};
+
+export const findCursoDestinoForTransfer = async ({
+  cursoId,
+  matrizCurricularId,
+}: {
+  cursoId: string;
+  matrizCurricularId: string;
+}) => {
+  return prisma.curso.findUnique({
+    where: {id: cursoId},
+    select: {
+      id: true,
+      nome: true,
+      modalidade: true,
+      campus: {select: transferenciaCampusSelect},
+      matrizes: {
+        where: {id: matrizCurricularId, ativo: true, cursoId},
+        select: {
+          id: true,
+          nome: true,
+          anoVigencia: true,
+          componentes: {
+            select: {disciplinaId: true},
+          },
+        },
+        take: 1,
+      },
+    },
+  });
+};
+
+const STATUS_MATRICULA_ABERTA: StatusMatricula[] = [
+  StatusMatricula.PRE_MATRICULADO,
+  StatusMatricula.ATIVO,
+  StatusMatricula.TRANCADO,
+];
+
+export const findOpenEnrollmentOnCurso = async ({
+  alunoId,
+  cursoId,
+}: {
+  alunoId: string;
+  cursoId: string;
+}) => {
+  return prisma.matricula.findFirst({
+    where: {
+      alunoId,
+      cursoId,
+      status: {in: STATUS_MATRICULA_ABERTA},
+    },
+    select: {id: true, status: true},
+  });
+};
+
+export const persistInternalTransfer = async ({
+  origemId,
+  alunoId,
+  cursoId,
+  matrizCurricularId,
+  periodoAtual,
+  semestreIngresso,
+  diarioIds,
+}: {
+  origemId: string;
+  alunoId: string;
+  cursoId: string;
+  matrizCurricularId: string;
+  periodoAtual: number;
+  semestreIngresso: string;
+  diarioIds: string[];
+}) => {
+  return prisma.$transaction(async (tx) => {
+    const destino = await tx.matricula.create({
+      data: {
+        alunoId,
+        cursoId,
+        matrizCurricularId,
+        periodoAtual,
+        semestreIngresso,
+        status: StatusMatricula.ATIVO,
+      },
+      select: {id: true},
+    });
+
+    await tx.matricula.update({
+      where: {id: origemId},
+      data: {status: StatusMatricula.TRANSFERIDO},
+    });
+
+    if (diarioIds.length > 0) {
+      await tx.diarioClasse.updateMany({
+        where: {id: {in: diarioIds}},
+        data: {matriculaId: destino.id},
+      });
+    }
+
+    return destino;
+  });
+};

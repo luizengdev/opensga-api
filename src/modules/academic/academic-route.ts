@@ -561,7 +561,7 @@ export const academicRoutes = async (app: FastifyInstance): Promise<void> => {
       ...acessoAdmin,
       schema: {
         tags: ["Acadêmico - Matrizes"],
-        summary: "Excluir matriz sem matrículas vinculadas",
+        summary: "Excluir matriz sem componentes e sem matrículas vinculadas",
         security: [{bearerAuth: []}],
         params: matrizIdParamsSchema,
         response: {
@@ -646,7 +646,7 @@ export const academicRoutes = async (app: FastifyInstance): Promise<void> => {
       ...acessoAdmin,
       schema: {
         tags: ["Acadêmico - Turmas"],
-        summary: "Ofertar turma de disciplina global no semestre",
+        summary: "Ofertar turma de um curso no período letivo",
         security: [{bearerAuth: []}],
         body: createTurmaSchema,
         response: {

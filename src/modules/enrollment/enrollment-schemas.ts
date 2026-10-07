@@ -1,6 +1,11 @@
 import {z} from "zod";
 
-import {ModalidadeCurso, StatusMatricula} from "../../generated/prisma/enums.js";
+import {
+  ModalidadeCurso,
+  StatusDisciplina,
+  StatusMatricula,
+  TipoCampus,
+} from "../../generated/prisma/enums.js";
 
 const responsavelFields = ["responsavelCpf", "responsavelNome", "responsavelEmail", "parentesco"] as const;
 
@@ -95,6 +100,64 @@ export const enrollmentItemSchema = z.object({
 
 export const enrollmentListResponseSchema = z.array(enrollmentItemSchema);
 
+export const transferEnrollmentSchema = z.object({
+  cursoId: z.uuid(),
+  matrizCurricularId: z.uuid(),
+});
+
+export const transferPreviewQuerySchema = z.object({
+  cursoId: z.uuid(),
+  matrizCurricularId: z.uuid(),
+});
+
+const transferenciaCampusSchema = z.object({
+  id: z.uuid(),
+  nome: z.string(),
+  codigoPolo: z.string(),
+  tipo: z.enum(TipoCampus),
+});
+
+const transferenciaDisciplinaSchema = z.object({
+  diarioId: z.uuid(),
+  disciplinaId: z.uuid(),
+  codigo: z.string(),
+  nome: z.string(),
+  statusDisciplina: z.enum(StatusDisciplina),
+});
+
+const transferenciaCursoSchema = z.object({
+  id: z.uuid(),
+  nome: z.string(),
+  modalidade: z.enum(ModalidadeCurso),
+  campus: transferenciaCampusSchema,
+  matriz: z.object({
+    id: z.uuid(),
+    nome: z.string(),
+    anoVigencia: z.number().int(),
+  }),
+});
+
+export const transferPreviewResponseSchema = z.object({
+  matriculaOrigemId: z.uuid(),
+  aluno: z.object({
+    ra: z.string(),
+    nome: z.string(),
+  }),
+  origem: transferenciaCursoSchema,
+  destino: transferenciaCursoSchema,
+  mesmoCurso: z.boolean(),
+  disciplinasTransferiveis: z.array(transferenciaDisciplinaSchema),
+  disciplinasNaoTransferiveis: z.array(transferenciaDisciplinaSchema),
+});
+
+export const transferEnrollmentResponseSchema = transferPreviewResponseSchema.extend({
+  matriculaDestinoId: z.uuid(),
+  statusOrigem: z.literal(StatusMatricula.TRANSFERIDO),
+  statusDestino: z.literal(StatusMatricula.ATIVO),
+});
+
 export type ICreateEnrollmentInput = z.infer<typeof createEnrollmentSchema>;
 export type IUpdateEnrollmentStatusInput = z.infer<typeof updateEnrollmentStatusSchema>;
 export type IListEnrollmentsQuery = z.infer<typeof listEnrollmentsQuerySchema>;
+export type ITransferEnrollmentInput = z.infer<typeof transferEnrollmentSchema>;
+export type ITransferPreviewQuery = z.infer<typeof transferPreviewQuerySchema>;

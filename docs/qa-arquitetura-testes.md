@@ -2,8 +2,8 @@
 
 | Campo              | Valor                                                          |
 | :----------------- | :------------------------------------------------------------- |
-| Versão             | 1.0.0                                                          |
-| Data               | 02/10/2026                                                     |
+| Versão             | 1.2.0                                                          |
+| Data               | 07/10/2026                                                     |
 | Público            | QA, Postman/Newman, Playwright (E2E do front), desenvolvimento |
 | Base HTTP          | `{{API_BASE_URL}}` (dev: `http://localhost:3333`)              |
 | Prefixo de negócio | `/api/v1`                                                      |
@@ -21,7 +21,7 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 3. Execute os critérios de aceite (CA) e os cenários Gherkin. Cada cenário tem um **ID de rastreio** para o Postman (`QA-AUTH-01`, etc.).
 4. Falha = divergência entre este spec e a API. Se a API estiver certa e o spec errado, atualize este arquivo.
 
-**Fora de escopo nesta versão:** portal aluno/responsável, upload Cloudinary, paginação, forgot-password, suíte automatizada no CI.
+**Fora de escopo nesta versão:** upload Cloudinary, paginação, forgot-password, suíte automatizada no CI. Portal aluno/responsável entra na seção 5 (`QA-PORTAL-*`).
 
 ---
 
@@ -60,6 +60,8 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 - Login: `POST /api/v1/auth/login` com `{ "identificador", "senha" }`.
 - Identificador aceito: e-mail, CPF, RA (aluno) ou matrícula funcional (professor).
 - JWT inválido, ausente ou expirado → **401** `{ error, message? }`.
+- Janela de sessão (claim `exp`): **20 minutos** para `ADMIN` e `PROFESSOR`; **30 minutos** para `ALUNO` e `RESPONSAVEL`. Vale no login e em `POST /auth/renovar`.
+- `POST /auth/renovar` (autenticado) devolve `{ token }` com a mesma janela do papel, para renovar a sessão enquanto houver atividade.
 - Conta `ativo = false` no login **e** em qualquer rota autenticada → **401**.
 - Papel sem permissão → **403**.
 
@@ -94,7 +96,7 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 | `baseUrl`                                                    | `http://localhost:3333`    |
 | `token_admin`                                                | JWT admin                  |
 | `token_professor`                                            | JWT professor              |
-| `token_aluno`                                                | JWT aluno (só login/`/me`) |
+| `token_aluno`                                                | JWT aluno (login, `/me`, portal) |
 | `campusId`, `cursoId`, `matrizId`, `disciplinaId`, `turmaId` | UUIDs do seed / setup      |
 | `matriculaId`, `diarioId`, `professorId`, `alunoUserId`      | UUIDs do fluxo             |
 
@@ -108,9 +110,9 @@ Rodar seed: `npx prisma db seed --config prisma7.config.ts`.
 | :-------------- | :-------------------------------------------------------------------- | :----------------- | :---------- | :------------------------------------------ |
 | Secretaria      | `testeadmin@opensga.dev` ou `000.000.000-00`                          | `Admin@123456`     | `ADMIN`     | CRUD + dashboard admin                      |
 | Docente         | `professor@opensga.dev`, CPF `111.111.111-11` ou matrícula `PROF-001` | `Professor@123456` | `PROFESSOR` | Turmas próprias, diário, dashboard, avaliar |
-| Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001`          | `Aluno@123456`     | `ALUNO`     | **Somente** login e `/me`                   |
+| Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001`          | `Aluno@123456`     | `ALUNO`     | Login, `/me` e portal (`/portal/contexto`, `/portal/documentos`, `/portal/ouvidoria`) |
 
-Dados acadêmicos criados pelo seed: campi `SEDE-REC` (5 cursos PRESENCIAL) e `POLO-EAD` (5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem AV/AVS, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`.
+Dados acadêmicos criados pelo seed: `SEDE-REC` (`tipo = CAMPI`, 5 cursos PRESENCIAL) e `POLO-EAD` (`tipo = POLO`, 5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** com `cursoId` e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem AV/AVS, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`. Quatro `ModeloDocumento` ativos (declaração, histórico, quitação, carteirinha); o seed não sobrescreve texto já editado pela Secretaria.
 
 Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`getMonth() < 6`), senão `2`. Dashboard e seed usam a mesma regra.
 
@@ -118,24 +120,89 @@ Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`get
 
 ## 5. Matriz RBAC
 
-| Recurso                                                                              | Público | ADMIN |     PROFESSOR      | ALUNO |
-| :----------------------------------------------------------------------------------- | :-----: | :---: | :----------------: | :---: |
-| `GET /health`                                                                        |   sim   |   —   |         —          |   —   |
-| `POST /auth/login`                                                                   |   sim   |   —   |         —          |   —   |
-| `GET /auth/me`, `PATCH /auth/senha`                                                  |         |  sim  |        sim         |  sim  |
-| CRUD users, academic (exceto GET turma), matriculas, faturas, ouvidoria              |         |  sim  |        403         |  403  |
-| `GET /comunicados`                                                                   |         | todas | só o seu papel     |  403  |
-| POST/PATCH/DELETE `/comunicados`                                                     |         |  sim  |        403         |  403  |
-| `GET /academic/turmas`, `GET /academic/turmas/:id`                                   |         | todas |     só as suas     |  403  |
-| `GET /diario`, `GET /diario/:id`                                                     |         | todos | só das suas turmas |  403  |
-| `POST /diario/enturmar`, `DELETE /diario/:id`                                        |         |  sim  |        403         |  403  |
-| `PATCH /diario/avaliar`                                                              |         |  sim  | só se for titular  |  403  |
-| `GET /dashboard/admin`                                                               |         |  sim  |        403         |  403  |
-| `GET /dashboard/professor`                                                           |         |  403  |        sim         |  403  |
+| Recurso                                                                              | Público | ADMIN |     PROFESSOR      | ALUNO / RESPONSAVEL |
+| :----------------------------------------------------------------------------------- | :-----: | :---: | :----------------: | :-----------------: |
+| `GET /health`                                                                        |   sim   |   —   |         —          |          —          |
+| `POST /auth/login`                                                                   |   sim   |   —   |         —          |          —          |
+| `GET /auth/me`, `PATCH /auth/senha`                                                  |         |  sim  |        sim         |         sim         |
+| CRUD users, academic (exceto GET turma), matriculas, faturas, ouvidoria ADMIN        |         |  sim  |        403         |         403         |
+| `GET /comunicados`                                                                   |         | todas | só o seu papel     |         403         |
+| POST/PATCH/DELETE `/comunicados`                                                     |         |  sim  |        403         |         403         |
+| `GET /academic/turmas`, `GET /academic/turmas/:id`                                   |         | todas |     só as suas     |         403         |
+| `GET /diario`, `GET /diario/:id`                                                     |         | todos | só das suas turmas |         403         |
+| `POST /diario/enturmar`, `DELETE /diario/:id`                                        |         |  sim  |        403         |         403         |
+| `PATCH /diario/avaliar`                                                              |         |  sim  | só se for titular  |         403         |
+| `POST /diario/fechar-semestre`                                                       |         |  sim  | só se for titular  |         403         |
+| `GET /dashboard/admin`                                                               |         |  sim  |        403         |         403         |
+| `GET /dashboard/professor`                                                           |         |  403  |        sim         |         403         |
+| `GET /portal/contexto`, `GET /portal/documentos`, `POST /portal/documentos/emitir`, `POST /portal/ouvidoria` |         |  403  |        403         |         sim         |
+| `GET /documentos/modelos`, `PATCH /documentos/modelos/:id`                            |         |  sim  |        403         |         403         |
 
 **CA-RBAC-01.** Sem `Authorization`, toda rota protegida retorna 401.  
 **CA-RBAC-02.** Token de professor em rota ADMIN-only retorna 403.  
-**CA-RBAC-03.** Token de aluno além de `/auth/*` retorna 403.
+**CA-RBAC-03.** Token de aluno em CRUD da secretaria retorna 403. Leitura própria fica em `GET /portal/contexto`; documentos em `GET /portal/documentos` e `POST /portal/documentos/emitir`; protocolo próprio em `POST /portal/ouvidoria`.
+
+**CA-PORTAL-01.** `GET /portal/contexto` com JWT ALUNO devolve só o vínculo, diários, faturas e comunicados daquele aluno.  
+**CA-PORTAL-02.** Responsável só consulta dependente vinculado (`alunoId`); outro UUID responde 403.  
+**CA-PORTAL-03.** `POST /portal/ouvidoria` grava protocolo com `usuarioId` do JWT; sem fila administrativa.
+
+**CA-DOC-01.** `GET /portal/documentos` com JWT ALUNO devolve só modelos `ativo`.  
+**CA-DOC-02.** `POST /portal/documentos/emitir` com `DECLARACAO_MATRICULA` ou `CARTEIRINHA_ESTUDANTIL` e matrícula diferente de `ATIVO` responde 400.  
+**CA-DOC-03.** `POST /portal/documentos/emitir` com `QUITACAO_FINANCEIRA` e fatura `ATRASADA` responde 409.  
+**CA-DOC-04.** Emissão bem-sucedida interpola placeholders do `corpo`, persiste `EmissaoDocumento` com código `AUT-…` e devolve disciplinas/matriz estruturadas.  
+**CA-DOC-05.** `PATCH /documentos/modelos/:id` com `ativo: false` remove o tipo do catálogo do portal. Professor e aluno em `/documentos/modelos` recebem 403.
+
+```gherkin
+@QA-PORTAL-01
+Cenário: Aluno lê o próprio contexto
+  Dado que estou autenticado como ALUNO
+  Quando solicito GET /api/v1/portal/contexto
+  Então a resposta é 200
+  E o corpo contém profile, matricula, disciplinas e faturas do próprio aluno
+
+@QA-PORTAL-02
+Cenário: Responsável não acessa aluno de outra guarda
+  Dado que estou autenticado como RESPONSAVEL
+  Quando solicito GET /api/v1/portal/contexto?alunoId=uuid-de-outro-aluno
+  Então a resposta é 403
+
+@QA-DOC-01
+Cenário: Aluno lista só documentos liberados
+  Dado que estou autenticado como ALUNO
+  E a Secretaria desativou o modelo HISTORICO_PARCIAL
+  Quando solicito GET /api/v1/portal/documentos
+  Então a resposta é 200
+  E o corpo não contém tipo HISTORICO_PARCIAL
+
+@QA-DOC-02
+Cenário: Declaração exige matrícula ativa
+  Dado que estou autenticado como ALUNO
+  E a matrícula do aluno não está ATIVO
+  Quando envio POST /api/v1/portal/documentos/emitir com tipo DECLARACAO_MATRICULA
+  Então a resposta é 400
+
+@QA-DOC-03
+Cenário: Quitação bloqueada por fatura atrasada
+  Dado que estou autenticado como ALUNO
+  E o aluno possui fatura ATRASADA
+  Quando envio POST /api/v1/portal/documentos/emitir com tipo QUITACAO_FINANCEIRA
+  Então a resposta é 409
+
+@QA-DOC-04
+Cenário: Emissão interpola o texto da Secretaria
+  Dado que estou autenticado como ALUNO
+  E a matrícula está ATIVO
+  Quando envio POST /api/v1/portal/documentos/emitir com tipo DECLARACAO_MATRICULA
+  Então a resposta é 200
+  E o corpo contém o nome do aluno no texto interpolado
+  E codigoAutenticacao começa com AUT-
+
+@QA-DOC-05
+Cenário: Professor não edita modelos de documento
+  Dado que estou autenticado como PROFESSOR
+  Quando solicito GET /api/v1/documentos/modelos
+  Então a resposta é 403
+```
 
 ```gherkin
 @QA-RBAC-01
@@ -160,9 +227,10 @@ Cenário: Professor tenta criar campus
 
 - Login único por e-mail, CPF, RA ou matrícula funcional.
 - Senha de login: mínimo 6 caracteres; senha nova (`PATCH /auth/senha`): mínimo 8.
-- `/me` devolve `id`, `nome`, `email`, `cpf`, `role`, `avatarUrl`, `ativo`, `aluno.{id, ra}|null`, `professor.{id, matricula, titulacao}|null`.
+- `/me` devolve `id`, `nome`, `email`, `cpf`, `role`, `avatarUrl`, `ativo`, `aluno.{id, ra}|null`, `professor.{id, matricula, titulacao}|null` e `dependentes[]` (sempre presente; preenchido para `RESPONSAVEL`).
 - Troca de senha exige senha atual correta.
 - Conta inativa não autentica e não usa JWT antigo.
+- Inatividade: JWT de `ADMIN`/`PROFESSOR` expira em 20 minutos; de `ALUNO`/`RESPONSAVEL` em 30 minutos. `POST /auth/renovar` desliza a janela se o JWT ainda for válido.
 
 ### Critérios de aceite
 
@@ -171,10 +239,13 @@ Cenário: Professor tenta criar campus
 **CA-AUTH-03.** Login aluno com RA retorna `role = ALUNO`.  
 **CA-AUTH-04.** Identificador ou senha inválidos → 401.  
 **CA-AUTH-05.** `GET /auth/me` do professor inclui `professor.id` e `professor.matricula`.  
-**CA-AUTH-06.** `GET /auth/me` do aluno inclui `aluno.id` e `aluno.ra`.  
+**CA-AUTH-06.** `GET /auth/me` do aluno inclui `aluno.id`, `aluno.ra` e `dependentes` (array, vazio se não for responsável).  
 **CA-AUTH-07.** `PATCH /auth/senha` com senha atual correta → 200 `{ message }`; login seguinte só aceita a senha nova.  
 **CA-AUTH-08.** Senha atual incorreta → 400.  
-**CA-AUTH-09.** Usuário `ativo = false` no login → 401; JWT emitido antes da inativação também → 401.
+**CA-AUTH-09.** Usuário `ativo = false` no login → 401; JWT emitido antes da inativação também → 401.  
+**CA-AUTH-10.** Login `ADMIN` ou `PROFESSOR` emite JWT com `exp` de 20 minutos (± 60 s).  
+**CA-AUTH-11.** Login `ALUNO` ou `RESPONSAVEL` emite JWT com `exp` de 30 minutos (± 60 s).  
+**CA-AUTH-12.** `POST /auth/renovar` autenticado → 200 `{ token }` com a mesma janela do papel; sem JWT → 401.
 
 ```gherkin
 @QA-AUTH-01
@@ -219,6 +290,25 @@ Cenário: Conta inativada após o login
   E um ADMIN inativa esse usuário (PATCH /users/:id { "ativo": false })
   Quando o titular reutiliza o JWT em GET /auth/me
   Então a resposta é 401
+
+@QA-AUTH-10
+Cenário: Sessão administrativa expira em 20 minutos
+  Dado login de ADMIN ou PROFESSOR
+  Quando decodifico o JWT retornado
+  Então exp está a 20 minutos da emissão (± 60 s)
+
+@QA-AUTH-11
+Cenário: Sessão do aluno expira em 30 minutos
+  Dado login de ALUNO ou RESPONSAVEL
+  Quando decodifico o JWT retornado
+  Então exp está a 30 minutos da emissão (± 60 s)
+
+@QA-AUTH-12
+Cenário: Renovação deslizante da sessão
+  Dado um JWT válido
+  Quando envio POST /api/v1/auth/renovar
+  Então a resposta é 200
+  E o novo token tem a mesma janela de exp do papel
 ```
 
 ---
@@ -275,20 +365,53 @@ Cenário: E-mail duplicado na atualização
 
 ### 8.1 Campus, curso, disciplina (CRUD ADMIN)
 
-**Regras.** Campus tem `codigoPolo` único e `estado` com 2 letras. Curso exige `campusId` existente. Disciplina é catálogo global (`codigo` único).
+**Regras.** Campus tem `codigoPolo` único, `estado` com 2 letras e `tipo` (`CAMPI` presencial/semipresencial ou `POLO` EAD). Curso exige `campusId` existente; polo só aceita modalidade EAD; campus não aceita EAD. Disciplina é catálogo global (`codigo` único) com carga e tipo (`tipo`, `tipoEntrega`, `chTotal`, parcelas e `chExtensao`). `chPresencial + chSincrona + chAssincrona = chTotal`. Pisos do Decreto 12.456 **não** se aplicam no catálogo (só no componente da matriz, pela modalidade do curso). Semestre ideal não existe na disciplina.
 
-**CA-ACA-01.** CRUD campus: POST 201, GET lista/id 200, PATCH 200, DELETE sem matrículas 200.  
+**CA-ACA-01.** CRUD campus: POST 201 (com `tipo` CAMPI ou POLO), GET lista/id 200, PATCH 200, DELETE sem matrículas 200.  
 **CA-ACA-02.** Campus/curso inexistente em GET/PATCH/DELETE → 404.  
 **CA-ACA-03.** Curso com `campusId` inválido → 404.  
-**CA-ACA-04.** `GET /academic/cursos?campusId=` filtra pelo campus.
+**CA-ACA-04.** `GET /academic/cursos?campusId=` filtra pelo campus.  
+**CA-ACA-07.** POST campus com `tipo` CAMPI ou POLO → 201 e o corpo inclui `tipo`.  
+**CA-ACA-08.** POST curso EAD em campus `CAMPI` ou presencial em `POLO` → 400.  
+**CA-ACA-05.** POST disciplina com soma CH ≠ total → 400.  
+**CA-ACA-06.** POST disciplina válida → 201 e o corpo inclui `tipo`, `tipoEntrega`, `chTotal` e as parcelas.
 
 ```gherkin
 @QA-ACA-01
 Cenário: Criar e buscar campus
   Dado um JWT de ADMIN
-  Quando envio POST /api/v1/academic/campi com nome, codigoPolo, cidade, estado e endereco
+  Quando envio POST /api/v1/academic/campi com nome, codigoPolo, tipo CAMPI, cidade, estado e endereco
   Então a resposta é 201
-  E GET /academic/campi/:id devolve o mesmo codigoPolo
+  E GET /academic/campi/:id devolve o mesmo codigoPolo e tipo CAMPI
+
+@QA-ACA-07
+Cenário: Polo EAD no cadastro de unidade
+  Dado um JWT de ADMIN
+  Quando envio POST /api/v1/academic/campi com tipo POLO
+  Então a resposta é 201
+  E o corpo inclui tipo POLO
+
+@QA-ACA-08
+Cenário: Modalidade incompatível com o tipo da unidade
+  Dado um campus CAMPI e um polo POLO
+  Quando crio um curso EAD no campus CAMPI
+  Então a resposta é 400
+  Quando crio um curso PRESENCIAL no polo POLO
+  Então a resposta é 400
+
+@QA-ACA-05
+Cenário: Disciplina com carga horária inconsistente
+  Dado um JWT de ADMIN
+  Quando envio POST /api/v1/academic/disciplinas com chTotal 60, chPresencial 40, chSincrona 10, chAssincrona 0
+  Então a resposta é 400
+  E a mensagem informa que a soma das parcelas deve ser idêntica à CH total
+
+@QA-ACA-06
+Cenário: Disciplina válida devolve carga e tipo
+  Dado um JWT de ADMIN
+  Quando envio POST /api/v1/academic/disciplinas com nome, codigo, tipo ESPECIFICO, tipoEntrega PRESENCIAL_FISICO, chTotal 60, presencial 60, sincrona 0, assincrona 0 e chExtensao 0
+  Então a resposta é 201
+  E o corpo inclui tipo, tipoEntrega, chTotal, chPresencial, chSincrona, chAssincrona e chExtensao
 ```
 
 ### 8.2 Matriz e componente
@@ -308,7 +431,9 @@ Cenário: Criar e buscar campus
 **CA-MTZ-04.** PATCH só `semestreIdeal` (sem CH) não revalida soma.  
 **CA-MTZ-05.** PATCH alterando `chTotal` sem ajustar parcelas inconsistentes → 400.  
 **CA-MTZ-06.** `GET /academic/matrizes?cursoId=` filtra.  
-**CA-MTZ-07.** `GET /academic/matrizes/:id` inclui componentes.
+**CA-MTZ-07.** `GET /academic/matrizes/:id` inclui componentes.  
+**CA-MTZ-08.** DELETE matriz com componente → 409 e mensagem para remover os componentes.  
+**CA-MTZ-09.** DELETE matriz sem componente e sem matrícula → 200.
 
 ```gherkin
 @QA-MTZ-02
@@ -323,6 +448,19 @@ Cenário: Carga horária consistente
   Dado uma matriz e uma disciplina existentes
   Quando adiciono componente com chTotal 60, presencial 40, sincrona 10, assincrona 10, extensao 8
   Então a resposta é 201
+
+@QA-MTZ-08
+Cenário: Matriz com componente não pode ser apagada
+  Dado uma matriz com pelo menos um componente
+  Quando envio DELETE /api/v1/academic/matrizes/:id
+  Então a resposta é 409
+  E a mensagem pede para remover os componentes antes de excluir a matriz
+
+@QA-MTZ-09
+Cenário: Matriz vazia sem matrícula pode ser apagada
+  Dado uma matriz sem componentes e sem matrículas
+  Quando envio DELETE /api/v1/academic/matrizes/:id
+  Então a resposta é 200
 ```
 
 ### 8.3 Auditoria MEC
@@ -366,13 +504,15 @@ Cenário: Matriz inconforme em extensão
 
 ### 8.4 Turmas
 
-**Regras.** CRUD ADMIN. GET lista/id também PROFESSOR (somente `professor.userId = JWT.sub`). Filtros opcionais: `campusId`, `anoLetivo`, `semestreLetivo`. Lista inclui `quantidadeDiarios`.
+**Regras.** CRUD ADMIN. GET lista/id também PROFESSOR (somente `professor.userId = JWT.sub`). Filtros opcionais: `campusId`, `cursoId`, `anoLetivo`, `semestreLetivo`. Lista inclui `quantidadeDiarios`. A turma pertence a um curso; a disciplina precisa estar na matriz desse curso; o campus deve ser o do curso.
 
-**CA-TUR-01.** ADMIN cria turma com campus, disciplina e professor existentes → 201.  
+**CA-TUR-01.** ADMIN cria turma com curso, campus do curso, disciplina da matriz e professor existentes → 201.  
 **CA-TUR-02.** FK inexistente → 404.  
 **CA-TUR-03.** ADMIN lista todas; professor lista só as suas.  
 **CA-TUR-04.** Professor em `GET /turmas/:id` de outra turma → 403.  
-**CA-TUR-05.** DELETE turma remove diários (Cascade) e retorna 200.
+**CA-TUR-05.** DELETE turma remove diários (Cascade) e retorna 200.  
+**CA-TUR-06.** Disciplina fora da matriz do curso → 400.  
+**CA-TUR-07.** `campusId` diferente do campus do curso → 400.
 
 ```gherkin
 @QA-TUR-03
@@ -401,8 +541,12 @@ Cenário: Professor acessa turma de outro docente
 - CPF/e-mail do aluno únicos na instituição.
 - Responsável: ou nenhum campo, ou os quatro (`responsavelCpf`, `responsavelNome`, `responsavelEmail`, `parentesco`). CPF/e-mail do responsável ≠ aluno.
 - Lista: `GET /matriculas?status=` (sem filtro = todos os status).
-- `PATCH /matriculas/:id/status` com `PRE_MATRICULADO | ATIVO | TRANCADO | CANCELADO | FORMADO | EVADIDO`.
+- `PATCH /matriculas/:id/status` com `PRE_MATRICULADO | ATIVO | TRANCADO | CANCELADO | FORMADO | EVADIDO | TRANSFERIDO`.
 - `DELETE /matriculas/:id` remove diários; **não** apaga o aluno.
+- Transferência interna (`ADMIN`): origem `ATIVO` ou `TRANCADO`; destino = outro `cursoId` (curso distinto ou mesma oferta em outro polo/campus) com matriz ativa daquele curso.
+- Mesmo programa (`nome` do curso, case-insensitive) → move **todos** os diários para a nova matrícula. Curso diferente → move só diários cuja `disciplinaId` está na matriz de destino; os demais permanecem no vínculo `TRANSFERIDO`.
+- Origem fica `TRANSFERIDO`; destino nasce `ATIVO` (mesmo RA, `periodoAtual` e `semestreIngresso` da origem). 409 se já houver matrícula `PRE_MATRICULADO`, `ATIVO` ou `TRANCADO` no curso destino.
+- `GET /matriculas/:id/transferencia-preview?cursoId&matrizCurricularId` simula (200) sem persistir. `POST /matriculas/:id/transferencia` efetivar.
 
 ### Critérios de aceite
 
@@ -412,7 +556,13 @@ Cenário: Professor acessa turma de outro docente
 **CA-MAT-04.** Responsável parcial → 400.  
 **CA-MAT-05.** `GET /matriculas?status=ATIVO` não devolve trancadas.  
 **CA-MAT-06.** PATCH status → 200 `{ id, status }`.  
-**CA-MAT-07.** DELETE matrícula → 200; `GET /users/alunos/:id` do aluno ainda existe.
+**CA-MAT-07.** DELETE matrícula → 200; `GET /users/alunos/:id` do aluno ainda existe.  
+**CA-MAT-08.** `POST /matriculas/:id/transferencia` de ATIVO para outro curso do **mesmo nome** (outro polo/campus) → 200; origem `TRANSFERIDO`; destino `ATIVO`; todos os diários mudam de `matriculaId`.  
+**CA-MAT-09.** Transferência para curso de **nome diferente** → só diários cuja disciplina está na matriz destino mudam de matrícula; os demais permanecem na origem.  
+**CA-MAT-10.** Destino = mesmo `cursoId` da origem → 400.  
+**CA-MAT-11.** Origem `PRE_MATRICULADO`, `CANCELADO`, `FORMADO`, `EVADIDO` ou `TRANSFERIDO` → 400.  
+**CA-MAT-12.** Já existe matrícula `ATIVO`/`TRANCADO`/`PRE_MATRICULADO` no curso destino → 409.  
+**CA-MAT-13.** `GET .../transferencia-preview` com os mesmos dados de CA-MAT-08 → 200, `mesmoCurso=true`, sem criar matrícula.
 
 ```gherkin
 @QA-MAT-01
@@ -436,6 +586,32 @@ Cenário: Excluir matrícula preserva o aluno
   Quando envio DELETE /matriculas/:id
   Então a resposta é 200
   E o perfil ALUNO continua listável
+
+@QA-MAT-08
+Cenário: Transferência interna do mesmo curso entre polo e campus
+  Dado matrícula ATIVO em Engenharia Presencial (SEDE)
+  E o aluno possui diários na origem
+  E existe Engenharia EAD no polo com o mesmo nome e matriz ativa
+  Quando envio POST /matriculas/:id/transferencia com cursoId e matrizCurricularId do polo
+  Então a resposta é 200
+  E mesmoCurso é true
+  E a origem fica TRANSFERIDO
+  E a nova matrícula é ATIVO no polo
+  E todos os diários passam a referenciar a matrícula de destino
+
+@QA-MAT-09
+Cenário: Transferência para curso distinto aproveita só disciplinas em comum
+  Dado matrícula ATIVO em Engenharia com diário de Ética (catálogo global) e de Cálculo I
+  E o curso destino Direito contém Ética na matriz, mas não Cálculo I
+  Quando efetivo a transferência
+  Então o diário de Ética migra para a nova matrícula
+  E o diário de Cálculo I permanece no vínculo TRANSFERIDO
+
+@QA-MAT-12
+Cenário: Destino já ocupado
+  Dado o aluno já possui matrícula ATIVO no curso destino
+  Quando envio POST /matriculas/:id/transferencia
+  Então a resposta é 409
 ```
 
 ---
@@ -719,10 +895,14 @@ Cenário: Responder reclamação
 | Ação                                             | Esperado                            | ID        |
 | :----------------------------------------------- | :---------------------------------- | :-------- |
 | DELETE campus/curso/matriz com matrícula filha   | 409                                 | QA-DEL-01 |
+| DELETE curso com turma ofertada                  | 409                                 | QA-TUR-08 |
 | DELETE disciplina ou usuário professor com turma | 409                                 | QA-DEL-02 |
 | DELETE componente com alunos enturmados na disciplina | 409                              | QA-DEL-07 |
+| DELETE matriz com componente                     | 409                                 | QA-MTZ-08 |
+| DELETE matriz sem componente e sem matrícula     | 200                                 | QA-MTZ-09 |
 | DELETE turma                                     | 200; diários somem                  | QA-DEL-03 |
 | DELETE matrícula                                 | 200; aluno permanece                | QA-DEL-04 |
+| POST transferência com destino já ocupado        | 409                                 | QA-MAT-12 |
 | DELETE responsável (via user)                    | aluno fica com `responsavelId` null | QA-DEL-05 |
 | GET/DELETE id inexistente                        | 404                                 | QA-DEL-06 |
 
@@ -820,7 +1000,7 @@ Pastas sugeridas (espelham este doc):
 2. `01-Auth` — me, senha, inativo
 3. `02-RBAC` — 401/403
 4. `03-Users`
-5. `04-Academic` — campus, curso, disciplina, matriz, componente, MEC, turma
+5. `04-Academic` — campus (`tipo` CAMPI/POLO), curso (modalidade × unidade), disciplina (catálogo CH), matriz, componente, MEC, turma (`cursoId` + período)
 6. `05-Enrollment`
 7. `06-Grading` — enturmar, listar, avaliar (tabela de decisão), desenturmar
 8. `07-Dashboard`
@@ -847,6 +1027,7 @@ Ambientes: `local` (`baseUrl=http://localhost:3333`) e, depois, `staging`.
 | QA-TUR-03/04, QA-DIA-_, QA-DASH-_                | Portal professor | P0         |
 | QA-DEL-*                                         | Integridade      | P1         |
 | QA-USR-_, QA-ACA-_, QA-FIN-_, QA-COM-_, QA-OUV-* | CRUD             | P1         |
+| QA-DOC-*                                         | Documentos       | P1         |
 | QA-E2E-01                                        | Regressão        | P0         |
 | Smoke seção 16                                   | Gate             | P0         |
 

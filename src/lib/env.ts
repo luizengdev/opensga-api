@@ -10,7 +10,7 @@ const envSchema = z.object({
   API_BASE_URL: z.string().default("http://localhost:3333"),
 
   JWT_SECRET: z.string().min(1),
-  JWT_EXPIRES_IN: z.string().default("7d"),
+  JWT_EXPIRES_IN: z.string().default("20m"),
 
   STRIPE_SECRET_KEY: z.string().catch(""),
   STRIPE_WEBHOOK_SECRET: z.string().catch(""),

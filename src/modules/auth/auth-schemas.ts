@@ -1,6 +1,6 @@
 import {z} from "zod";
 
-import {Role} from "../../generated/prisma/client.js";
+import {Role, StatusMatricula} from "../../generated/prisma/enums.js";
 
 export const loginSchema = z.object({
   identificador: z.string().min(3, "Informe seu e-mail, CPF ou RA."),
@@ -45,6 +45,17 @@ export const meResponseSchema = z.object({
       titulacao: z.string(),
     })
     .nullable(),
+  dependentes: z.array(
+    z.object({
+      id: z.uuid(),
+      nome: z.string(),
+      ra: z.string(),
+      curso: z.string(),
+      periodo: z.number().int(),
+      statusMatricula: z.enum(StatusMatricula),
+      avatarUrl: z.string().nullable(),
+    }),
+  ),
 });
 
 export const errorResponseSchema = z.object({
@@ -56,8 +67,13 @@ export const messageResponseSchema = z.object({
   message: z.string(),
 });
 
+export const renewSessionResponseSchema = z.object({
+  token: z.string(),
+});
+
 export type ILoginInput = z.infer<typeof loginSchema>;
 export type ILoginResponse = z.infer<typeof loginResponseSchema>;
 export type IChangePasswordInput = z.infer<typeof changePasswordSchema>;
 export type IMeResponse = z.infer<typeof meResponseSchema>;
+export type IRenewSessionResponse = z.infer<typeof renewSessionResponseSchema>;
 export type IErrorResponse = z.infer<typeof errorResponseSchema>;

@@ -253,28 +253,52 @@ const cursosSeed: ICursoSeed[] = [
 const ensureCampus = async ({
   nome,
   codigoPolo,
+  tipo,
   cidade,
   estado,
   endereco,
 }: {
   nome: string;
   codigoPolo: string;
+  tipo: "CAMPI" | "POLO";
   cidade: string;
   estado: string;
   endereco: string;
 }) => {
   return prisma.campus.upsert({
     where: {codigoPolo},
-    update: {nome, cidade, estado, endereco},
-    create: {nome, codigoPolo, cidade, estado, endereco},
+    update: {nome, tipo, cidade, estado, endereco},
+    create: {nome, codigoPolo, tipo, cidade, estado, endereco},
   });
 };
 
-const ensureDisciplina = async ({codigo, nome}: {codigo: string; nome: string}) => {
+const ensureDisciplina = async ({
+  codigo,
+  nome,
+  tipo,
+  tipoEntrega,
+  chTotal,
+  chPresencial,
+  chSincrona,
+  chAssincrona,
+  chExtensao,
+}: {
+  codigo: string;
+  nome: string;
+  tipo: "CORE_VIDA_CARREIRA" | "ESPECIFICO" | "EXTENSAO";
+  tipoEntrega: "PRESENCIAL_FISICO" | "SINCRONO_MEDIADO" | "ASSINCRONO_DIGITAL";
+  chTotal: number;
+  chPresencial: number;
+  chSincrona: number;
+  chAssincrona: number;
+  chExtensao: number;
+}) => {
+  const carga = {nome, tipo, tipoEntrega, chTotal, chPresencial, chSincrona, chAssincrona, chExtensao};
+
   return prisma.disciplina.upsert({
     where: {codigo},
-    update: {nome},
-    create: {codigo, nome},
+    update: carga,
+    create: {codigo, ...carga},
   });
 };
 
@@ -468,6 +492,7 @@ async function main() {
   const sede = await ensureCampus({
     nome: "Sede Recife",
     codigoPolo: "SEDE-REC",
+    tipo: "CAMPI",
     cidade: "Recife",
     estado: "PE",
     endereco: "Av. Conde da Boa Vista, 1000",
@@ -476,6 +501,7 @@ async function main() {
   const poloEad = await ensureCampus({
     nome: "Polo EAD Recife",
     codigoPolo: "POLO-EAD",
+    tipo: "POLO",
     cidade: "Recife",
     estado: "PE",
     endereco: "Rua do Imperador, 200 — Polo Digital",
@@ -486,8 +512,28 @@ async function main() {
     "POLO-EAD": poloEad,
   };
 
-  const etica = await ensureDisciplina({codigo: "ETICA", nome: "Ética e Cidadania"});
-  const extensao = await ensureDisciplina({codigo: "EXTUNIV", nome: "Extensão Universitária"});
+  const etica = await ensureDisciplina({
+    codigo: "ETICA",
+    nome: "Ética e Cidadania",
+    tipo: "CORE_VIDA_CARREIRA",
+    tipoEntrega: "PRESENCIAL_FISICO",
+    chTotal: 60,
+    chPresencial: 60,
+    chSincrona: 0,
+    chAssincrona: 0,
+    chExtensao: 0,
+  });
+  const extensao = await ensureDisciplina({
+    codigo: "EXTUNIV",
+    nome: "Extensão Universitária",
+    tipo: "EXTENSAO",
+    tipoEntrega: "PRESENCIAL_FISICO",
+    chTotal: 40,
+    chPresencial: 40,
+    chSincrona: 0,
+    chAssincrona: 0,
+    chExtensao: 40,
+  });
 
   const agora = dayjs();
   const anoLetivo = agora.year();
@@ -536,7 +582,16 @@ async function main() {
         },
       }));
 
-    const especifica = await ensureDisciplina(item.disciplina);
+    const especifica = await ensureDisciplina({
+      ...item.disciplina,
+      tipo: "ESPECIFICO",
+      tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "ASSINCRONO_DIGITAL",
+      chTotal: 60,
+      chPresencial: isPresencial ? 60 : 8,
+      chSincrona: isPresencial ? 0 : 12,
+      chAssincrona: isPresencial ? 0 : 40,
+      chExtensao: 0,
+    });
 
     await ensureComponente({
       matrizCurricularId: matriz.id,
@@ -584,6 +639,7 @@ async function main() {
       where: {codigo: codigoTurma},
       update: {
         campusId: campus.id,
+        cursoId: curso.id,
         disciplinaId: especifica.id,
         professorId: professor.id,
         anoLetivo,
@@ -592,6 +648,7 @@ async function main() {
       },
       create: {
         campusId: campus.id,
+        cursoId: curso.id,
         disciplinaId: especifica.id,
         professorId: professor.id,
         codigo: codigoTurma,
@@ -709,6 +766,49 @@ async function main() {
         },
       });
     }
+  }
+
+  const modelosDocumento = [
+    {
+      tipo: "DECLARACAO_MATRICULA" as const,
+      titulo: "Declaração de matrícula ativa",
+      descricao: "Atesta vínculo discente no semestre vigente com disciplinas e carga horária.",
+      finalidade: "Estágios, passe estudantil e bancos.",
+      corpo:
+        "Declaramos, para os devidos fins e a quem possa interessar, que o(a) discente {{aluno.nome}}, portador(a) do CPF sob o nº {{aluno.cpf}} e Registro Acadêmico RA {{aluno.ra}}, encontra-se regularmente matriculado(a) e com frequência ativa no curso de {{curso.nome}}, modalidade {{curso.modalidade}}, no polo {{campus.nome}}.\n\nO discente ingressou nesta Instituição de Ensino Superior no período letivo de {{semestreIngresso}} e está cursando atualmente o {{periodoAtual}}º período, estando em conformidade com as exigências regimentais e da Lei de Diretrizes e Bases da Educação Nacional (LDB 9.394/96).",
+    },
+    {
+      tipo: "HISTORICO_PARCIAL" as const,
+      titulo: "Histórico escolar parcial",
+      descricao: "Espelho curricular com disciplinas, médias finais e horas integralizadas.",
+      finalidade: "Transferência, processos seletivos e intercâmbio.",
+      corpo:
+        "Espelho curricular do(a) discente {{aluno.nome}}, RA {{aluno.ra}}, no curso de {{curso.nome}}. Carga horária integralizada: {{chIntegralizada}}h de {{chTotalCurso}}h.",
+    },
+    {
+      tipo: "QUITACAO_FINANCEIRA" as const,
+      titulo: "Declaração de quitação financeira",
+      descricao: "Certidão de adimplência das mensalidades até a data corrente.",
+      finalidade: "Bolsas, convênios e comprovação de pagamentos.",
+      corpo:
+        "Certificamos que o(a) estudante {{aluno.nome}}, inscrito(a) sob o CPF {{aluno.cpf}} e RA {{aluno.ra}}, do curso de {{curso.nome}}, encontra-se com sua situação financeira regular e em dia com as obrigações contratuais até {{dataEmissao}}.\n\nEsta declaração atesta a ausência de débitos vencidos e pendências de mensalidades para fins de comprovação em estágios, transferência ou solicitação de financiamento estudantil.",
+    },
+    {
+      tipo: "CARTEIRINHA_ESTUDANTIL" as const,
+      titulo: "Carteirinha estudantil digital",
+      descricao: "Identificação estudantil com RA e validade vinculada à matrícula ativa.",
+      finalidade: "Acesso ao campus e meia-entrada.",
+      corpo:
+        "Documento de identificação estudantil válido enquanto a matrícula permanecer ativa. Autenticidade: {{codigoAutenticacao}}.",
+    },
+  ];
+
+  for (const modelo of modelosDocumento) {
+    await prisma.modeloDocumento.upsert({
+      where: {tipo: modelo.tipo},
+      update: {},
+      create: modelo,
+    });
   }
 
   console.log(`✅ Admin: ${admin.email} (Senha: Admin@123456)`);

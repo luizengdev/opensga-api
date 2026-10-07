@@ -1,8 +1,11 @@
-import {Role} from "../../generated/prisma/enums.js";
+import {ModalidadeCurso, Role, TipoCampus} from "../../generated/prisma/enums.js";
 import {
   countMatriculasByCampus,
   countMatriculasByCurso,
   countMatriculasByMatriz,
+  countComponentesByCursoDisciplina,
+  countComponentesByMatriz,
+  countTurmasByCurso,
   countDiariosByDisciplinaCampus,
   countTurmasByDisciplina,
   deleteCampusById,
@@ -98,6 +101,22 @@ const assertCargaHoraria = ({
   }
 };
 
+const assertModalidadeCompativelComCampus = ({
+  tipoCampus,
+  modalidade,
+}: {
+  tipoCampus: TipoCampus;
+  modalidade: ModalidadeCurso;
+}) => {
+  if (tipoCampus === TipoCampus.POLO && modalidade !== ModalidadeCurso.EAD) {
+    throw new AcademicError("Polo EAD só pode ofertar cursos na modalidade EAD.", 400);
+  }
+
+  if (tipoCampus === TipoCampus.CAMPI && modalidade === ModalidadeCurso.EAD) {
+    throw new AcademicError("Campus presencial não oferta cursos EAD. Cadastre o curso em um polo.", 400);
+  }
+};
+
 export const fetchCampi = async () => {
   return listCampi();
 };
@@ -169,17 +188,32 @@ export const createNewCurso = async (input: ICreateCursoInput) => {
     throw new AcademicError("Campus informado não existe.", 404);
   }
 
+  assertModalidadeCompativelComCampus({
+    tipoCampus: campus.tipo,
+    modalidade: input.modalidade,
+  });
+
   return insertCurso(input);
 };
 
 export const changeCurso = async ({id, data}: {id: string; data: IUpdateCursoInput}) => {
-  if (data.campusId) {
-    const campus = await findCampusById(data.campusId);
+  const current = await findCursoById(id);
 
-    if (!campus) {
-      throw new AcademicError("Campus informado não existe.", 404);
-    }
+  if (!current) {
+    throw new AcademicError("Curso não encontrado.", 404);
   }
+
+  const campusId = data.campusId ?? current.campusId;
+  const campus = await findCampusById(campusId);
+
+  if (!campus) {
+    throw new AcademicError("Campus informado não existe.", 404);
+  }
+
+  assertModalidadeCompativelComCampus({
+    tipoCampus: campus.tipo,
+    modalidade: data.modalidade ?? current.modalidade,
+  });
 
   const curso = await updateCursoById({id, data});
 
@@ -195,6 +229,12 @@ export const removeCurso = async (id: string) => {
 
   if (!curso) {
     throw new AcademicError("Curso não encontrado.", 404);
+  }
+
+  const turmas = await countTurmasByCurso(id);
+
+  if (turmas > 0) {
+    throw new AcademicError("Não é possível excluir o curso enquanto houver turmas ofertadas.", 409);
   }
 
   const matriculas = await countMatriculasByCurso(id);
@@ -227,10 +267,32 @@ export const fetchDisciplinaById = async (id: string) => {
 };
 
 export const createNewDisciplina = async (input: ICreateDisciplinaInput) => {
+  assertCargaHoraria(input);
   return insertDisciplina(input);
 };
 
 export const changeDisciplina = async ({id, data}: {id: string; data: IUpdateDisciplinaInput}) => {
+  const current = await findDisciplinaById(id);
+
+  if (!current) {
+    throw new AcademicError("Disciplina não encontrada.", 404);
+  }
+
+  const cargaInformada =
+    data.chTotal !== undefined ||
+    data.chPresencial !== undefined ||
+    data.chSincrona !== undefined ||
+    data.chAssincrona !== undefined;
+
+  if (cargaInformada) {
+    assertCargaHoraria({
+      chTotal: data.chTotal ?? current.chTotal,
+      chPresencial: data.chPresencial ?? current.chPresencial,
+      chSincrona: data.chSincrona ?? current.chSincrona,
+      chAssincrona: data.chAssincrona ?? current.chAssincrona,
+    });
+  }
+
   const disciplina = await updateDisciplinaById({id, data});
 
   if (!disciplina) {
@@ -301,6 +363,12 @@ export const removeMatriz = async (id: string) => {
 
   if (!matriz) {
     throw new AcademicError("Matriz curricular não encontrada.", 404);
+  }
+
+  const componentes = await countComponentesByMatriz(id);
+
+  if (componentes > 0) {
+    throw new AcademicError("Remova os componentes antes de excluir a matriz.", 409);
   }
 
   const matriculas = await countMatriculasByMatriz(id);
@@ -504,16 +572,35 @@ export const auditMatrizOrThrowConflict = async ({matrizCurricularId}: {matrizCu
 };
 
 export const createNewTurma = async (input: ICreateTurmaInput) => {
+  const curso = await findCursoById(input.cursoId);
+
+  if (!curso) {
+    throw new AcademicError("Curso informado não existe.", 404);
+  }
+
   const campus = await findCampusById(input.campusId);
 
   if (!campus) {
     throw new AcademicError("Campus informado não existe.", 404);
   }
 
+  if (curso.campusId !== input.campusId) {
+    throw new AcademicError("A turma deve ser ofertada no campus do curso.", 400);
+  }
+
   const disciplina = await findDisciplinaById(input.disciplinaId);
 
   if (!disciplina) {
     throw new AcademicError("Disciplina informada não existe.", 404);
+  }
+
+  const naMatriz = await countComponentesByCursoDisciplina({
+    cursoId: input.cursoId,
+    disciplinaId: input.disciplinaId,
+  });
+
+  if (naMatriz === 0) {
+    throw new AcademicError("A disciplina não pertence à matriz do curso informado.", 400);
   }
 
   const professor = await findProfessorById(input.professorId);

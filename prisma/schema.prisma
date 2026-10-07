@@ -28,6 +28,7 @@ enum StatusMatricula {
   CANCELADO
   FORMADO
   EVADIDO
+  TRANSFERIDO
 }
 
 enum StatusFatura {
@@ -62,6 +63,11 @@ enum ModalidadeCurso {
   EAD
 }
 
+enum TipoCampus {
+  CAMPI
+  POLO
+}
+
 enum TipoComponente {
   CORE_VIDA_CARREIRA // Disciplinas institucionais comuns do grupo
   ESPECIFICO // Disciplinas do núcleo técnico da formação
@@ -81,6 +87,13 @@ enum StatusDisciplina {
   APROVADO
   RF
   RN
+}
+
+enum TipoDocumento {
+  DECLARACAO_MATRICULA
+  HISTORICO_PARCIAL
+  QUITACAO_FINANCEIRA
+  CARTEIRINHA_ESTUDANTIL
 }
 
 // --- MODELOS DE USUÁRIOS E PERFIS ---
@@ -141,6 +154,7 @@ model Aluno {
   responsavel Responsavel? @relation("ResponsavelAlunos", fields: [responsavelId], references: [id], onDelete: SetNull)
   matriculas  Matricula[]
   faturas     Fatura[]
+  emissoes    EmissaoDocumento[]
 
   @@map("alunos")
 }
@@ -148,13 +162,14 @@ model Aluno {
 // --- ESTRUTURA INSTITUCIONAL E ACADÊMICA ---
 
 model Campus {
-  id         String   @id @default(uuid()) @db.Uuid
-  nome       String   @db.VarChar(120)
-  codigoPolo String   @unique @db.VarChar(20)
-  cidade     String   @db.VarChar(100)
-  estado     String   @db.VarChar(2)
-  endereco   String   @db.VarChar(255)
-  criadoEm   DateTime @default(now()) @db.Timestamptz()
+  id         String     @id @default(uuid()) @db.Uuid
+  nome       String     @db.VarChar(120)
+  codigoPolo String     @unique @db.VarChar(20)
+  tipo       TipoCampus @default(CAMPI)
+  cidade     String     @db.VarChar(100)
+  estado     String     @db.VarChar(2)
+  endereco   String     @db.VarChar(255)
+  criadoEm   DateTime   @default(now()) @db.Timestamptz()
 
   cursos Curso[]
   turmas Turma[]
@@ -174,6 +189,7 @@ model Curso {
   campus     Campus             @relation(fields: [campusId], references: [id], onDelete: Cascade)
   matrizes   MatrizCurricular[]
   matriculas Matricula[]
+  turmas     Turma[]
   preco      PrecoCurso?
 
   @@map("cursos")
@@ -195,10 +211,17 @@ model MatrizCurricular {
 }
 
 model Disciplina {
-  id       String   @id @default(uuid()) @db.Uuid
-  nome     String   @db.VarChar(150)
-  codigo   String   @unique @db.VarChar(20)
-  criadoEm DateTime @default(now()) @db.Timestamptz()
+  id           String         @id @default(uuid()) @db.Uuid
+  nome         String         @db.VarChar(150)
+  codigo       String         @unique @db.VarChar(20)
+  tipo         TipoComponente @default(ESPECIFICO)
+  tipoEntrega  TipoEntrega    @default(PRESENCIAL_FISICO)
+  chTotal      Int            @default(60)
+  chPresencial Int            @default(60)
+  chSincrona   Int            @default(0)
+  chAssincrona Int            @default(0)
+  chExtensao   Int            @default(0)
+  criadoEm     DateTime       @default(now()) @db.Timestamptz()
 
   componentes MatrizComponente[]
   turmas      Turma[]
@@ -231,6 +254,7 @@ model MatrizComponente {
 model Turma {
   id             String      @id @default(uuid()) @db.Uuid
   campusId       String      @db.Uuid
+  cursoId        String      @db.Uuid
   disciplinaId   String      @db.Uuid
   professorId    String      @db.Uuid
   codigo         String      @unique @db.VarChar(50)
@@ -243,6 +267,7 @@ model Turma {
   criadoEm       DateTime    @default(now()) @db.Timestamptz()
 
   campus     Campus         @relation(fields: [campusId], references: [id], onDelete: Cascade)
+  curso      Curso          @relation(fields: [cursoId], references: [id], onDelete: Restrict)
   disciplina Disciplina     @relation(fields: [disciplinaId], references: [id], onDelete: Restrict)
   professor  Professor      @relation(fields: [professorId], references: [id], onDelete: Restrict)
   diarios    DiarioClasse[]
@@ -353,4 +378,34 @@ model Reclamacao {
   usuario User @relation("ReclamacoesAbertas", fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@map("reclamacoes")
+}
+
+model ModeloDocumento {
+  id           String        @id @default(uuid()) @db.Uuid
+  tipo         TipoDocumento @unique
+  titulo       String        @db.VarChar(200)
+  descricao    String        @db.VarChar(500)
+  finalidade   String        @db.VarChar(500)
+  corpo        String        @db.Text
+  ativo        Boolean       @default(true)
+  criadoEm     DateTime      @default(now()) @db.Timestamptz()
+  atualizadoEm DateTime      @updatedAt @db.Timestamptz()
+
+  emissoes EmissaoDocumento[]
+
+  @@map("modelos_documento")
+}
+
+model EmissaoDocumento {
+  id          String   @id @default(uuid()) @db.Uuid
+  modeloId    String   @db.Uuid
+  alunoId     String   @db.Uuid
+  matriculaId String   @db.Uuid
+  codigo      String   @unique @db.VarChar(40)
+  emitidoEm   DateTime @default(now()) @db.Timestamptz()
+
+  modelo ModeloDocumento @relation(fields: [modeloId], references: [id], onDelete: Restrict)
+  aluno  Aluno           @relation(fields: [alunoId], references: [id], onDelete: Cascade)
+
+  @@map("emissoes_documento")
 }

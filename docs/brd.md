@@ -8,7 +8,8 @@
 
 | Versão | Data de Elaboração | Responsável | Perfil | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **1.1.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Homologado |
+| **1.2.0** | 07/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Homologado |
+| **1.1.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Substituído |
 | **1.0.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Substituído |
 
 ---
@@ -85,7 +86,7 @@ O sistema é subdividido em domínios de negócio delimitados, operando sob regr
 
 ### 2.2 Estrutura Curricular e Governança Regulatória MEC
 
-- **Catálogo Centralizado de Disciplinas**: Entidades globais padronizadas evitam duplicidade de nomenclaturas e garantem consistência institucional entre campi.
+- **Catálogo Centralizado de Disciplinas**: Entidades globais padronizadas (nome, código, tipo curricular, tipo de entrega e carga horária) evitam duplicidade de nomenclaturas e garantem consistência institucional entre campi. O semestre ideal só é informado ao incluir a disciplina na matriz de um curso.
 - **Versionamento de Matrizes Curriculares**: Um mesmo curso superior pode ter múltiplas matrizes curriculares atreladas a diferentes anos de vigência, assegurando segurança jurídica aos alunos de diferentes períodos de ingresso.
 - **Tridimensionalidade da Carga Horária**: Cada componente curricular define sua carga horária total distribuída obrigatoriamente entre três modalidades de entrega:
   1. *Presencial Física* (em salas de aula, laboratórios ou polos).
@@ -103,11 +104,12 @@ O sistema é subdividido em domínios de negócio delimitados, operando sob regr
 - **Geração Automatizada de RA**: Criação de Registro Acadêmico único e permanente, composto pelo ano civil de ingresso acrescido de sufixo numérico exclusivo.
 - **Tratamento Integral do Responsável Legal**: Na existência de dependência legal/financeira, o sistema cria simultaneamente o perfil do responsável (com validação estrita de unicidade de CPF e e-mail em relação ao aluno) ou associa um responsável já cadastrado na instituição.
 - **Boas-Vindas e Entrega de Acesso (Onboarding Digital)**: Geração de senhas temporárias seguras com envio automático de e-mail formal da Secretaria Acadêmica, fornecendo RA, link do portal e orientações de primeiro acesso.
-- **Gestão de Ciclo de Vida da Matrícula**: Acompanhamento dos estados de vínculo do estudante: pré-matrícula, ativa, trancada, cancelada, formada ou evadida.
+- **Gestão de Ciclo de Vida da Matrícula**: Acompanhamento dos estados de vínculo do estudante: pré-matrícula, ativa, trancada, cancelada, formada, evadida ou transferida (mudança interna de curso ou polo/campus).
+- **Transferência Interna**: A secretaria reposiciona um aluno ATIVO ou TRANCADO em outro curso ou na oferta do mesmo programa em outro polo/campus. O RA não muda. A matrícula de origem fica `TRANSFERIDO` e um novo vínculo `ATIVO` é criado no destino. Se o nome do curso coincidir (mesmo programa em outra unidade/modalidade), todo o histórico de diários segue com o aluno; se o curso for outro, só as disciplinas globais presentes na matriz de destino são aproveitadas.
 
 ### 2.4 Oferta de Turmas e Alocação Semestral
 
-- **Planejamento por Período Letivo**: Oferta de turmas semestrais atreladas a um campus/polo, com especificação de disciplina, docente titular, limite de capacidade física/virtual, horário e local/link.
+- **Planejamento por Período Letivo**: Oferta de turmas semestrais atreladas a um **curso** e ao campus/polo desse curso. A secretaria escolhe o semestre letivo (ano + 1º/2º), a disciplina da matriz daquele curso, o docente titular, a capacidade, o horário e o local/link.
 - **Monitoramento de Ocupação**: Rastreamento da quantidade de alunos enturmados em tempo real contra o limite de vagas planejado.
 
 ### 2.5 Diário de Classe, Frequência e Rendimento Escolar
@@ -145,13 +147,15 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 
 | Domínio | Capacidade ADMIN exposta |
 | :--- | :--- |
-| Identidade | Login unificado, `GET /auth/me` (ids de aluno/professor e `ativo`) e `PATCH /auth/senha`. CRUD de usuários, professores e administradores; consulta de alunos e responsáveis (`/users`). JWT de conta inativa é recusado. |
+| Identidade | Login unificado, `GET /auth/me` (`ativo`, ids de aluno/professor e `dependentes[]`) e `PATCH /auth/senha`. CRUD de usuários, professores e administradores; consulta de alunos e responsáveis (`/users`). JWT de conta inativa é recusado. |
 | Currículo | CRUD de campus, curso, disciplina, matriz, componente e turma (`/academic`). Auditoria MEC da matriz. Professor lista/consulta apenas as próprias turmas. |
-| Matrícula | Efetivação, consulta por status, alteração de status e exclusão do vínculo (`/matriculas`). O aluno não é apagado junto com a matrícula. |
+| Matrícula | Efetivação, consulta por status, alteração de status, exclusão do vínculo e transferência interna (`GET /matriculas/:id/transferencia-preview`, `POST /matriculas/:id/transferencia`). O aluno não é apagado junto com a matrícula. |
 | Diário | Enturmação ADMIN; listagem/consulta ADMIN+PROFESSOR (filtro JWT); desenturmação ADMIN; lançamento AV/AVS/AV3 pelo titular (`PATCH /diario/avaliar`); fechamento atômico (`POST /diario/fechar-semestre`). |
 | Dashboards | `GET /dashboard/admin` e `GET /dashboard/professor` com KPIs do período letivo. |
 | Financeiro | Precificação por curso (`/financeiro/precos`, ADMIN): o valor é cadastrado no OpenSGA e sincronizado como Product/Price no Stripe. Emissão de faturas (`/financeiro/faturas`). Inscrição/checkout (`POST /api/inscricao`, `POST /api/checkout`) só abrem o Stripe se o valor devido agora for maior que zero; isenção (cupom 100% na 1ª parcela) conclui em `PRE_MATRICULADO` sem cartão e agenda fatura `PENDENTE` no ciclo seguinte. Quando há cobrança, o Checkout oferece cartão e boleto (voucher em 3 dias). Webhook `POST /webhooks/stripe` ativa matrícula em `checkout.session.completed` só se `payment_status=paid` (cartão) ou em `checkout.session.async_payment_succeeded` (boleto); boleto gerado (`completed` + `unpaid`) e `async_payment_failed` não efetivam a vaga. Também concilia `invoice.payment_succeeded` e `invoice.payment_failed`. |
 | Comunicação | CRUD de comunicados por público-alvo (`/comunicados`) e fluxo de ouvidoria: abrir, responder, fechar e excluir (`/ouvidoria/reclamacoes`). |
+| Portal do aluno | `GET /portal/contexto` (`ALUNO` / `RESPONSAVEL`): vínculo, diários, faturas, matriz, comunicados e protocolos do aluno ou dependente (`alunoId` só se vinculado). `GET /portal/documentos` lista modelos ativos; `POST /portal/documentos/emitir` interpola o texto da Secretaria. `POST /portal/ouvidoria` abre protocolo em nome do JWT. Sem CRUD desses papéis. |
+| Documentos oficiais | Catálogo `ModeloDocumento` (`ADMIN`: `GET/PATCH /documentos/modelos`). Declaração e carteirinha exigem matrícula `ATIVO`; quitação bloqueada se fatura `ATRASADA`. Impressão no browser. |
 
 **Regras de exclusão (integridade referencial)**
 
@@ -188,15 +192,15 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 [Início: Criação de Nova Grade]
        │
        ▼
-[Cadastrar Campus e Código de Polo MEC]
+[Cadastrar unidade: Campus (presencial) ou Polo (EAD) + código MEC]
        │
        ▼
 [Criar Curso e Nova Versão de Matriz Curricular]
        │
        ▼
 [Vincular Componentes Curriculares à Matriz]
-  ├─> Definir Semestre Ideal e Classificação (Ex: Extensão)
-  └─> Decompor Carga Horária: Presencial + Síncrona + Assíncrona = CH Total
+  ├─> Escolher disciplina do catálogo (carga e tipo já cadastrados)
+  └─> Informar o semestre ideal naquela matriz (carga/tipo podem ser sobrescritos)
        │
        ▼
 [Executar Auditoria de Conformidade MEC]
@@ -230,7 +234,11 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 [Gera Senha Provisória criptografada para o Aluno (e Responsável)]
        │
        ▼
-[Cria Matrícula com status "ATIVO" no 1º Semestre]
+[Cria Matrícula no 1º Semestre]
+  ├── Secretaria (`POST /matriculas`) -> status ATIVO
+  └── Inscrição pública / Checkout -> PRE_MATRICULADO;
+         webhook Stripe (pagamento confirmado) -> ATIVO;
+         isenção 100% permanece PRE_MATRICULADO e agenda fatura PENDENTE
        │
        ▼
 [Dispara e-mail de Boas-Vindas com RA, link do portal e senha provisória]
@@ -326,11 +334,11 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 - **AV3 (Recuperação Final)**: Exame habilitado apenas se a nota semestral for inferior a 6,0 e a frequência for regular. Média final = (NS + AV3) / 2, corte em 5,0.
 - **Aluno**: Pessoa física com matrícula ativa ou com histórico curricular em um dos cursos da instituição.
 - **Assiduidade**: Índice de comparecimento do estudante às aulas da disciplina. O descumprimento de mais de 25% da carga horária gera reprovação sumária por infrequência.
-- **Campus / Polo**: Unidade física ou sede regional onde as atividades letivas e administrativas ocorrem, identificado formalmente por seu Código de Polo perante os cadastros do MEC.
+- **Campus / Polo**: Unidade da IES identificada pelo código MEC (`codigoPolo`). `tipo = CAMPI` é sede presencial (cursos presencial/semipresencial); `tipo = POLO` é polo de apoio EAD (somente cursos EAD).
 - **Carga Horária Cumprida (`chCumprida`)**: Quantidade de horas de uma disciplina que são efetivamente incorporadas ao histórico de integralização do estudante, condicionada estritamente à sua aprovação.
 - **Curricularização da Extensão**: Exigência legal estabelecida pela Resolução CNE/CES nº 7/2018 que impõe que no mínimo 10% da carga horária total da formação universitária seja dedicada a projetos e ações de extensão com a comunidade externa.
 - **Diário de Classe**: Instrumento formal de escrituração acadêmica onde são consolidados os registros de presença, ausências, notas parciais, exame final e resultado conclusivo de cada aluno em uma turma ofertada.
-- **Disciplina Global**: Entidade curricular neutra (ex.: *Cálculo I*, *Comunicação Empresarial*) reutilizável em múltiplos cursos ou unidades, evitando cadastros concorrentes no sistema.
+- **Disciplina Global**: Entidade curricular do catálogo (ex.: *Cálculo I*, *Comunicação Empresarial*), com carga e classificação padrão, reutilizável em múltiplos cursos. Semestre ideal pertence ao componente da matriz, não ao catálogo.
 - **Enturmação**: Ação de alocar um aluno formalmente matriculado em uma turma específica ofertada em um determinado semestre letivo.
 - **Matrícula**: Registro de vínculo contratual e acadêmico que associa um discente a um curso e a uma versão específica de matriz curricular.
 - **Matriz Curricular**: Versão pedagógica oficial do curso que estabelece a relação de disciplinas, cargas horárias, pré-requisitos, semestre ideal e modalidades de ensino aplicáveis aos alunos que ingressaram em seu período de vigência.
@@ -342,18 +350,19 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 - **RA (Registro Acadêmico)**: Código alfanumérico institucional exclusivo que identifica univocamente o discente durante toda a sua trajetória acadêmica na IES.
 - **Responsável**: Pessoa física legal ou financeiramente responsável pelo estudante perante a instituição, possuindo credenciais próprias para acompanhamento acadêmico e financeiro.
 - **Status da Matrícula**:
-  - `PRE_MATRICULADO`: Candidato em fase de análise de documentação ou assinatura de contrato.
+  - `PRE_MATRICULADO`: Candidato em ingresso (inscrição pública/Checkout) aguardando pagamento ou documentação; não efetivado até o webhook Stripe (ou permanece assim em isenção da 1ª parcela).
   - `ATIVO`: Aluno regular, apto a enturmar-se em turmas do período e a acessar as instalações da instituição.
   - `TRANCADO`: Suspensão temporária do vínculo acadêmico a pedido do estudante, preservando o direito à reabertura de estudos.
   - `CANCELADO`: Rompimento definitivo do vínculo acadêmico por desistência ou rescisão contratual.
   - `FORMADO`: Aluno que completou com êxito todas as exigências curriculares e de colação de grau.
   - `EVADIDO`: Aluno que abandonou os estudos sem comunicação formal à Secretaria Acadêmica no período regulamentar.
+  - `TRANSFERIDO`: Vínculo encerrado por transferência interna para outro curso ou polo/campus da instituição.
 - **Status da Fatura**:
   - `PENDENTE`: Cobrança gerada e aguardando liquidação até a data de vencimento.
   - `PAGA`: Liquidação financeira confirmada pelo gateway de pagamento ou baixa manual.
   - `ATRASADA`: Título vencido sem registro de pagamento, sujeito a ações de cobrança amigável.
   - `CANCELADA`: Cobrança invalidada por renegociação, bolsa, estorno ou cancelamento administrativo.
-- **Turma**: Instância de oferta semestral de uma disciplina global, vinculada a um campus, um docente regente, uma faixa de horário, um espaço físico/virtual e um limite pré-determinado de vagas.
+- **Turma**: Instância de oferta semestral de uma disciplina da matriz de um curso, no campus/polo desse curso, com docente regente, horário, local/link e limite de vagas. O período letivo (`anoLetivo`.`semestreLetivo`) é escolhido na oferta.
 
 ---
 

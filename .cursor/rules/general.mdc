@@ -14,7 +14,7 @@ Este documento define a arquitetura, padrões de engenharia, stack tecnológica 
 - **Modelo**: Repositórios (Backend API REST).
 - **Padrão Backend**: Arquitetura Hexagonal (Ports & Adapters) orientada a módulos de domínio.
 - **Perfis de Acesso (RBAC)**: `ADMIN`, `PROFESSOR`, `ALUNO`, `RESPONSAVEL`.
-- **Produto atual**: sistema interno (login unificado + dashboards ADMIN e PROFESSOR) e inscrição pública (`GET /api/catalogo`, `POST /api/inscricao` — Checkout Stripe só se o valor devido agora for > 0). Portal aluno/responsável self-service fica para depois — não abrir CRUD desses papéis agora.
+- **Produto atual**: sistema interno (login unificado + dashboards ADMIN e PROFESSOR), inscrição pública (`GET /api/catalogo`, `POST /api/inscricao` — Checkout Stripe só se o valor devido agora for > 0) e portal do aluno/responsável (`GET /portal/contexto`, `GET /portal/documentos`, `POST /portal/documentos/emitir`, `POST /portal/ouvidoria`). Não abrir CRUD desses papéis: leitura, emissão de documentos e ouvidoria própria no portal; cadastro e modelos de certidão continuam `ADMIN`.
 - **Testes / QA**: especificação em [docs/qa-arquitetura-testes.md](docs/qa-arquitetura-testes.md) (regras, CA, BDD `QA-*`). Fonte única para Postman **e** Playwright (`test('QA-…')`). Ao mudar regra de negócio, atualize esse arquivo antes da collection ou do E2E.
 
 ---
@@ -27,7 +27,7 @@ Este documento define a arquitetura, padrões de engenharia, stack tecnológica 
 - **Framework Web**: Fastify 5 com `fastify-type-provider-zod`.
 - **Validação de Schemas**: Zod 4.
 - **Banco de Dados & ORM**: PostgreSQL via Prisma 7 utilizando driver adapter `@prisma/adapter-pg`.
-- **Autenticação**: `@fastify/jwt` e `fastify-plugin` (`JWT_SECRET` e `JWT_EXPIRES_IN` via `src/lib/env.ts`). O Fastify não usa middleware no estilo Express: autenticação e RBAC são um plugin que decora a instância (`app.authenticate`, `app.authorize`) e as rotas aplicam esses hooks.
+- **Autenticação**: `@fastify/jwt` e `fastify-plugin` (`JWT_SECRET` e `JWT_EXPIRES_IN` via `src/lib/env.ts`). Login e `POST /auth/renovar` assinam o JWT com `20m` para `ADMIN`/`PROFESSOR` e `30m` para `ALUNO`/`RESPONSAVEL` (`src/lib/session.ts`); `JWT_EXPIRES_IN` é só o fallback do plugin. O Fastify não usa middleware no estilo Express: autenticação e RBAC são um plugin que decora a instância (`app.authenticate`, `app.authorize`) e as rotas aplicam esses hooks.
 - **Comunicação e Uploads**: Nodemailer (e-mails transacionais), Cloudinary (imagens/arquivos), Stripe (faturamento/mensalidades).
 - **Datas**: `dayjs` para manipular e formatar datas em runtime.
 
@@ -76,6 +76,7 @@ opensga-api/
     │   ├── grading/                # Diário de Classe, Notas (AV, AVS, AV3) e Faltas
     │   ├── financial/              # Faturas acadêmicas, Checkout de matrícula e webhooks Stripe
     │   ├── communications/         # Comunicados institucionais e ouvidoria
+    │   ├── documents/              # Modelos oficiais e emissão no portal do aluno
     │   └── dashboard/              # KPIs leves ADMIN e PROFESSOR
     └── index.ts                    # Bootstrap, /health e error handler HTTP
 ```
@@ -84,10 +85,10 @@ Todos os módulos seguem o mesmo conjunto de arquivos (`-route`, `-controller`, 
 
 Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 
-- `/auth` — login público; `GET /me` e `PATCH /auth/senha` autenticados
+- `/auth` — login público; `GET /me`, `POST /auth/renovar` e `PATCH /auth/senha` autenticados
 - `/users` — usuários, professores, alunos e responsáveis (`ADMIN`)
 - `/academic` — campi, cursos, disciplinas, matrizes, componentes (`ADMIN`); GET turmas também `PROFESSOR` (só as suas)
-- `/matriculas` — vínculo acadêmico (`ADMIN`)
+- `/matriculas` — vínculo acadêmico (`ADMIN`); `GET /matriculas/:id/transferencia-preview` e `POST /matriculas/:id/transferencia` (transferência interna de curso ou polo/campus)
 - `/diario` — enturmação `ADMIN`; GET lista/id `ADMIN`+`PROFESSOR` (professor filtrado pelo JWT); `PATCH /diario/avaliar` e `POST /diario/fechar-semestre` `ADMIN`+`PROFESSOR` titular
 - `/financeiro/precos` — precificação por curso/modalidade (`ADMIN`); sync Stripe Product/Price
 - `/financeiro/faturas` — contas a receber (`ADMIN`)
@@ -96,7 +97,12 @@ Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 - `POST /api/checkout` e `POST /api/v1/checkout` — Checkout de matrícula (público, aluno já existente); isenção conclui sem sessão Stripe
 - `POST /webhooks/stripe` — webhook Stripe (raw body, público, fora de `/api/v1`)
 - `/comunicados` e `/ouvidoria/reclamacoes` — mural e ouvidoria (`ADMIN`)
+- `/documentos/modelos` — catálogo de certidões oficiais (`ADMIN`): `GET` lista; `PATCH /documentos/modelos/:id` texto, finalidade e `ativo`
 - `/dashboard/admin` (`ADMIN`) e `/dashboard/professor` (`PROFESSOR`) — resumos do período (`anoLetivo` / `semestreLetivo` opcionais)
+- `GET /portal/contexto` (`ALUNO` + `RESPONSAVEL`) — contexto do aluno ou dependente (`alunoId` opcional); filtra diários, faturas, matriz, comunicados e protocolos próprios
+- `GET /portal/documentos` (`ALUNO` + `RESPONSAVEL`) — modelos `ativo` liberados pela Secretaria
+- `POST /portal/documentos/emitir` (`ALUNO` + `RESPONSAVEL`) — interpola o `corpo` do modelo; declaração/carteirinha exigem matrícula `ATIVO`; quitação 409 se fatura `ATRASADA`
+- `POST /portal/ouvidoria` (`ALUNO` + `RESPONSAVEL`) — abre protocolo em nome do JWT
 - `GET /health` — `{ status: "ok" }`, público, fora de `/api/v1`
 
 ### Plugins Fastify (não middlewares)
@@ -110,14 +116,15 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 - Rotas protegidas declaram esses hooks na própria rota. Login e `/health` permanecem públicos.
 - Exemplo: `onRequest: [app.authenticate]` e, quando a rota exige perfil, `preHandler: [app.authorize([Role.ADMIN, Role.PROFESSOR])]`.
 - `onRequest` roda antes de `preHandler`, então a autorização só executa depois do JWT válido e da conta ativa.
-- `GET /auth/me` devolve `ativo`, `aluno.{id, ra}` e `professor.{id, matricula, titulacao}` (nullable). Não omitir esses campos.
+- `GET /auth/me` devolve `ativo`, `aluno.{id, ra}`, `professor.{id, matricula, titulacao}` (nullable) e `dependentes[]` (sempre presente; preenchido para `RESPONSAVEL`). Não omitir esses campos.
 - `PATCH /auth/senha` (senha atual + nova) é o fluxo de primeiro acesso prometido no e-mail de matrícula.
+- `POST /auth/renovar` reemite o JWT com a mesma janela do papel (`20m` ADMIN/PROFESSOR, `30m` ALUNO/RESPONSAVEL) para sessão deslizante enquanto houver atividade.
 - Leituras por papel: **não duplicar CRUD**. Reutilizar o GET ADMIN e filtrar no service pelo JWT (`professor.userId = request.user.sub`); POST/PATCH/DELETE acadêmicos continuam `ADMIN`. Professor titular já é validado em `PATCH /diario/avaliar` e `POST /diario/fechar-semestre`.
 - Erros HTTP: `setErrorHandler` em `src/index.ts` responde `{ error, message? }`. Erros de domínio nos services usam a mesma forma. Não devolver o payload padrão do Fastify/Zod cru.
 
 ### Código Compartilhado
 
-- Centralizado em `src/lib/` com nomes curtos: `env.ts`, `db.ts`, `dayjs.ts`, `mailer.ts`, `stripe.ts`, `cloudinary.ts`.
+- Centralizado em `src/lib/` com nomes curtos: `env.ts`, `db.ts`, `dayjs.ts`, `session.ts`, `mailer.ts`, `stripe.ts`, `cloudinary.ts`.
 - Importar datas de `src/lib/dayjs.ts` (`import {dayjs} from "../../lib/dayjs.js"`), nunca direto de `"dayjs"`.
 - Prisma Client gerado em `src/generated/prisma/` e instanciado exclusivamente em `src/lib/db.ts`.
 
@@ -158,16 +165,15 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 ## 6. Regras de Negócio e Modelo Regulatório IES (MEC)
 
-### A. Matriz Curricular vs. Disciplina Global
+### A. Campus, disciplina, matriz e oferta de turma
 
-- `Disciplina` é uma entidade global (ex: _Cálculo I_, _Ética_). Evita duplicação no banco.
-- `MatrizCurricular` representa o versionamento curricular de um curso por ano/semestre de vigência.
-- `MatrizComponente` é a tabela pivot que conecta `MatrizCurricular` à `Disciplina`, definindo:
-  - `semestreIdeal`
-  - `tipo` (`CORE_VIDA_CARREIRA`, `ESPECIFICO`, `ELETIVA_TRILHA`, `EXTENSAO`, `OPTATIVO`)
-  - `tipoEntrega` (`PRESENCIAL_FISICO`, `SINCRONO_MEDIADO`, `ASSINCRONO_DIGITAL`)
-  - Distribuição horária: `chTotal = chPresencial + chSincrona + chAssincrona`.
-  - `chExtensao`: Horas destinadas à extensão curricular.
+- `Campus.tipo`: `CAMPI` (sede presencial) ou `POLO` (polo de apoio EAD). `codigoPolo` continua o código único da unidade no MEC.
+- Curso em `CAMPI`: só `PRESENCIAL` ou `SEMIPRESENCIAL`. Curso em `POLO`: só `EAD`. POST/PATCH curso incompatível → 400.
+- `Disciplina` é catálogo global (ex: _Cálculo I_, _Ética_) com `tipo`, `tipoEntrega`, `chTotal`, parcelas e `chExtensao`. `assertCargaHoraria` no POST/PATCH (`chTotal = presencial + síncrona + assíncrona`). Pisos do Decreto 12.456 **não** se aplicam no catálogo. Semestre ideal **não** existe na disciplina.
+- `MatrizCurricular` versiona o currículo do curso por ano de vigência.
+- `MatrizComponente` liga matriz à disciplina e define `semestreIdeal` (único campo só da matriz). Carga/tipo/entrega/extensão vêm do catálogo e podem ser sobrescritos naquele componente.
+- `DELETE /academic/matrizes/:id`: 409 se ainda houver componentes ou matrículas; matriz vazia e sem matrícula → 200.
+- `Turma` pertence a um `cursoId`. `campusId` deve ser o campus do curso. `disciplinaId` deve estar em alguma matriz desse curso. Body de criação inclui `anoLetivo` e `semestreLetivo` (1 ou 2). GET lista filtra `campusId`, `cursoId`, `anoLetivo`, `semestreLetivo`.
 
 ### B. Conformidade Regulatória MEC
 
@@ -192,17 +198,19 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 Definir `onDelete` explicitamente no Prisma. Antes de `delete`, o service conta filhos Restrict e lança erro de domínio **409** — não deixar o Prisma devolver P2003 cru.
 
-- **Cascade**: `User` → perfil (Professor / Aluno / Responsável) e `Reclamacao`; `Campus` → `Curso` → `Matriz` → `Componente`; `Campus` → `Turma`; `Curso` → `PrecoCurso`; `Aluno` → `Matricula` / `Fatura`; `Turma` ou `Matricula` → `DiarioClasse`.
-- **Restrict** (409 se houver filho): `Turma.disciplina`, `Turma.professor`, `Matricula.curso`, `Matricula.matrizCurricular`.
+- **Cascade**: `User` → perfil (Professor / Aluno / Responsável) e `Reclamacao`; `Campus` → `Curso` → `Matriz` → `Componente`; `Campus` → `Turma`; `Curso` → `PrecoCurso`; `Aluno` → `Matricula` / `Fatura` / `EmissaoDocumento`; `Turma` ou `Matricula` → `DiarioClasse`.
+- **Restrict** (409 se houver filho): `Turma.curso`, `Turma.disciplina`, `Turma.professor`, `Matricula.curso`, `Matricula.matrizCurricular`, `EmissaoDocumento.modelo`. DELETE curso com turmas ofertadas → 409.
 - **SetNull**: `Aluno.responsavelId` ao apagar o responsável.
 - Não apagar o próprio usuário autenticado. Apagar matrícula não apaga o aluno.
+- **Transferência interna** (`ADMIN`): `GET /matriculas/:id/transferencia-preview` e `POST /matriculas/:id/transferencia` com `{ cursoId, matrizCurricularId }`. Origem `ATIVO` ou `TRANCADO`; destino outro `cursoId` (curso distinto ou o mesmo programa em outro polo/campus). Mesmo `nome` de curso → move todos os diários; senão só `disciplinaId` presente na matriz de destino. Origem fica `TRANSFERIDO`; destino nasce `ATIVO` (RA, período e semestre de ingresso preservados). 409 se já houver matrícula em aberto no destino.
+- **Documentos oficiais**: catálogo `ModeloDocumento` (um por `TipoDocumento`). ADMIN edita `titulo`, `descricao`, `finalidade`, `corpo` e `ativo` em `PATCH /documentos/modelos/:id`. Portal lista só ativos e emite com placeholders `{{aluno.nome}}`, `{{aluno.cpf}}`, `{{aluno.ra}}`, `{{curso.nome}}`, `{{curso.modalidade}}`, `{{campus.nome}}`, `{{campus.codigoPolo}}`, `{{periodoAtual}}`, `{{semestreIngresso}}`, `{{dataEmissao}}`, `{{codigoAutenticacao}}`, `{{chIntegralizada}}`, `{{chTotalCurso}}`. Histórico, disciplinas do período e carteirinha usam os dados estruturados da emissão. Impressão no browser (`window.print()`), sem PDF no servidor.
 
 ### E. Dashboards internos
 
 - `GET /dashboard/admin`: matrículas por status, turmas do período, ocupação média, faturas `PENDENTE`, reclamações `ABERTO`.
 - `GET /dashboard/professor`: turmas do período com `quantidadeDiarios`/`capacidade` e contagem de diários sem nota semestral (AV/AVS).
 - Período padrão: ano corrente e semestre `1` de janeiro a junho, `2` no restante do ano. Aceitar query `anoLetivo` e `semestreLetivo`.
-- Seed de demo (`prisma/seed.ts`): admin, campi `SEDE-REC` e `POLO-EAD`, 5 cursos PRESENCIAL e 5 EAD (matriz 2026.1 com extensão ≥ 10%, 1 professor e 2 alunos cada, turma do período corrente, diários, faturas). Personas canônicas: `professor@opensga.dev` e `aluno@opensga.dev`. `PrecoCurso` via Stripe quando `STRIPE_SECRET_KEY` existir. Rodar `npx prisma db seed --config prisma7.config.ts`.
+- Seed de demo (`prisma/seed.ts`): admin, `SEDE-REC` (`tipo = CAMPI`) e `POLO-EAD` (`tipo = POLO`), 5 cursos PRESENCIAL na sede e 5 EAD no polo (matriz 2026.1 com extensão ≥ 10%, 1 professor e 2 alunos cada, turma do período corrente com `cursoId`, diários, faturas). Personas canônicas: `professor@opensga.dev` e `aluno@opensga.dev`. `PrecoCurso` via Stripe quando `STRIPE_SECRET_KEY` existir. Rodar `npx prisma db seed --config prisma7.config.ts`.
 
 ### F. Precificação e Stripe
 

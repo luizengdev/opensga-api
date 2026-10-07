@@ -116,7 +116,7 @@ Login: `POST /api/v1/auth/login` com `{ "identificador", "senha" }` (e-mail, CPF
 | `PROFESSOR` | `professor@opensga.dev` | `Professor@123456` |
 | `ALUNO` | `aluno@opensga.dev` | `Aluno@123456` |
 
-O seed monta campi `SEDE-REC` / `POLO-EAD`, 10 cursos (presencial + EAD), matrizes 2026.1, turmas, diários e faturas.
+O seed monta `SEDE-REC` (campus presencial) e `POLO-EAD` (polo EAD), 10 cursos, matrizes 2026.1, turmas por curso, diários e faturas.
 
 ---
 
@@ -136,6 +136,8 @@ Prefixo de negócio: **`/api/v1`**. Inscrição pública também em `/api` (sem 
 | Webhook | `POST /webhooks/stripe` | assinatura Stripe |
 | Comunicação | `/comunicados`, `/ouvidoria/reclamacoes` | `ADMIN` (GET comunicados também `PROFESSOR`) |
 | Dashboard | `/dashboard/admin`, `/dashboard/professor` | papel correspondente |
+| Documentos | `/documentos/modelos` | `ADMIN` |
+| Portal | `GET /portal/contexto`, `GET /portal/documentos`, `POST /portal/documentos/emitir`, `POST /portal/ouvidoria` | `ALUNO` / `RESPONSAVEL` |
 
 ¹ GET de turmas também para `PROFESSOR` (somente as suas).
 

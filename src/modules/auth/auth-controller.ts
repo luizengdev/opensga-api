@@ -1,7 +1,16 @@
 import {FastifyReply, FastifyRequest} from "fastify";
 
+import {Role} from "../../generated/prisma/enums.js";
+import {jwtExpiresInForRole} from "../../lib/session.js";
 import type {IChangePasswordInput, ILoginInput} from "./auth-schemas.js";
 import {authenticateUser, AuthError, changeOwnPassword, fetchUserProfile} from "./auth-service.js";
+
+const signAccessToken = (
+  reply: FastifyReply,
+  payload: {sub: string; role: Role; email: string},
+) => {
+  return reply.jwtSign(payload, {sign: {expiresIn: jwtExpiresInForRole(payload.role)}});
+};
 
 const replyWithAuthError = (error: unknown, reply: FastifyReply, fallback: string) => {
   if (error instanceof AuthError) {
@@ -16,7 +25,7 @@ export const loginHandler = async (request: FastifyRequest<{Body: ILoginInput}>,
   try {
     const user = await authenticateUser(request.body);
 
-    const token = await reply.jwtSign({
+    const token = await signAccessToken(reply, {
       sub: user.id,
       role: user.role,
       email: user.email,
@@ -39,6 +48,16 @@ export const getMeHandler = async (request: FastifyRequest, reply: FastifyReply)
   } catch (error) {
     return replyWithAuthError(error, reply, "Erro ao buscar perfil.");
   }
+};
+
+export const renewSessionHandler = async (request: FastifyRequest, reply: FastifyReply) => {
+  const token = await signAccessToken(reply, {
+    sub: request.user.sub,
+    role: request.user.role,
+    email: request.user.email,
+  });
+
+  return reply.status(200).send({token});
 };
 
 export const changePasswordHandler = async (
