@@ -3,6 +3,7 @@ import {
   countMatriculasByCampus,
   countMatriculasByCurso,
   countMatriculasByMatriz,
+  countComponentesByMatriz,
   countDiariosByDisciplinaCampus,
   countTurmasByDisciplina,
   deleteCampusById,
@@ -227,10 +228,32 @@ export const fetchDisciplinaById = async (id: string) => {
 };
 
 export const createNewDisciplina = async (input: ICreateDisciplinaInput) => {
+  assertCargaHoraria(input);
   return insertDisciplina(input);
 };
 
 export const changeDisciplina = async ({id, data}: {id: string; data: IUpdateDisciplinaInput}) => {
+  const current = await findDisciplinaById(id);
+
+  if (!current) {
+    throw new AcademicError("Disciplina não encontrada.", 404);
+  }
+
+  const cargaInformada =
+    data.chTotal !== undefined ||
+    data.chPresencial !== undefined ||
+    data.chSincrona !== undefined ||
+    data.chAssincrona !== undefined;
+
+  if (cargaInformada) {
+    assertCargaHoraria({
+      chTotal: data.chTotal ?? current.chTotal,
+      chPresencial: data.chPresencial ?? current.chPresencial,
+      chSincrona: data.chSincrona ?? current.chSincrona,
+      chAssincrona: data.chAssincrona ?? current.chAssincrona,
+    });
+  }
+
   const disciplina = await updateDisciplinaById({id, data});
 
   if (!disciplina) {
@@ -301,6 +324,12 @@ export const removeMatriz = async (id: string) => {
 
   if (!matriz) {
     throw new AcademicError("Matriz curricular não encontrada.", 404);
+  }
+
+  const componentes = await countComponentesByMatriz(id);
+
+  if (componentes > 0) {
+    throw new AcademicError("Remova os componentes antes de excluir a matriz.", 409);
   }
 
   const matriculas = await countMatriculasByMatriz(id);

@@ -52,10 +52,21 @@ const cursoSelect = {
   duracaoSemestres: true,
 } as const;
 
-const disciplinaSelect = {
+const disciplinaResumoSelect = {
   id: true,
   nome: true,
   codigo: true,
+} as const;
+
+const disciplinaSelect = {
+  ...disciplinaResumoSelect,
+  tipo: true,
+  tipoEntrega: true,
+  chTotal: true,
+  chPresencial: true,
+  chSincrona: true,
+  chAssincrona: true,
+  chExtensao: true,
 } as const;
 
 const matrizSelect = {
@@ -78,7 +89,7 @@ const componenteSelect = {
   chSincrona: true,
   chAssincrona: true,
   chExtensao: true,
-  disciplina: {select: disciplinaSelect},
+  disciplina: {select: disciplinaResumoSelect},
 } as const;
 
 const turmaPublicSelect = {
@@ -93,7 +104,7 @@ const turmaPublicSelect = {
   horario: true,
   salaOuLink: true,
   tipoEntrega: true,
-  disciplina: {select: disciplinaSelect},
+  disciplina: {select: disciplinaResumoSelect},
   professor: {
     select: {
       id: true,
@@ -252,7 +263,7 @@ export const findMatrizById = async (id: string) => {
           tipo: true,
           tipoEntrega: true,
           chTotal: true,
-          disciplina: {select: disciplinaSelect},
+          disciplina: {select: disciplinaResumoSelect},
         },
         orderBy: [{semestreIdeal: "asc"}, {disciplina: {nome: "asc"}}],
       },
@@ -266,6 +277,10 @@ export const updateMatrizById = async ({id, data}: {id: string; data: IUpdateMat
 
 export const countMatriculasByMatriz = async (matrizCurricularId: string) => {
   return prisma.matricula.count({where: {matrizCurricularId}});
+};
+
+export const countComponentesByMatriz = async (matrizCurricularId: string) => {
+  return prisma.matrizComponente.count({where: {matrizCurricularId}});
 };
 
 export const deleteMatrizById = async (id: string) => {

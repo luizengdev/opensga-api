@@ -68,6 +68,13 @@ export const cursoListResponseSchema = z.array(cursoResponseSchema);
 export const createDisciplinaSchema = z.object({
   nome: z.string().min(3).max(150),
   codigo: z.string().min(2).max(20),
+  tipo: z.enum(TipoComponente),
+  tipoEntrega: z.enum(TipoEntrega),
+  chTotal: z.number().int().min(10),
+  chPresencial: z.number().int().min(0).default(0),
+  chSincrona: z.number().int().min(0).default(0),
+  chAssincrona: z.number().int().min(0).default(0),
+  chExtensao: z.number().int().min(0).default(0),
 });
 
 export const updateDisciplinaSchema = createDisciplinaSchema.partial();
@@ -76,6 +83,13 @@ export const disciplinaResponseSchema = z.object({
   id: z.uuid(),
   nome: z.string(),
   codigo: z.string(),
+  tipo: z.enum(TipoComponente),
+  tipoEntrega: z.enum(TipoEntrega),
+  chTotal: z.number().int(),
+  chPresencial: z.number().int(),
+  chSincrona: z.number().int(),
+  chAssincrona: z.number().int(),
+  chExtensao: z.number().int(),
 });
 
 export const disciplinaListResponseSchema = z.array(disciplinaResponseSchema);

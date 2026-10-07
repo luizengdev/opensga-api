@@ -561,7 +561,7 @@ export const academicRoutes = async (app: FastifyInstance): Promise<void> => {
       ...acessoAdmin,
       schema: {
         tags: ["Acadêmico - Matrizes"],
-        summary: "Excluir matriz sem matrículas vinculadas",
+        summary: "Excluir matriz sem componentes e sem matrículas vinculadas",
         security: [{bearerAuth: []}],
         params: matrizIdParamsSchema,
         response: {

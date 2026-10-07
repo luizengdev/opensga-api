@@ -296,12 +296,14 @@ Cenário: E-mail duplicado na atualização
 
 ### 8.1 Campus, curso, disciplina (CRUD ADMIN)
 
-**Regras.** Campus tem `codigoPolo` único e `estado` com 2 letras. Curso exige `campusId` existente. Disciplina é catálogo global (`codigo` único).
+**Regras.** Campus tem `codigoPolo` único e `estado` com 2 letras. Curso exige `campusId` existente. Disciplina é catálogo global (`codigo` único) com carga e tipo (`tipo`, `tipoEntrega`, `chTotal`, parcelas e `chExtensao`). `chPresencial + chSincrona + chAssincrona = chTotal`. Pisos do Decreto 12.456 **não** se aplicam no catálogo (só no componente da matriz, pela modalidade do curso). Semestre ideal não existe na disciplina.
 
 **CA-ACA-01.** CRUD campus: POST 201, GET lista/id 200, PATCH 200, DELETE sem matrículas 200.  
 **CA-ACA-02.** Campus/curso inexistente em GET/PATCH/DELETE → 404.  
 **CA-ACA-03.** Curso com `campusId` inválido → 404.  
-**CA-ACA-04.** `GET /academic/cursos?campusId=` filtra pelo campus.
+**CA-ACA-04.** `GET /academic/cursos?campusId=` filtra pelo campus.  
+**CA-ACA-05.** POST disciplina com soma CH ≠ total → 400.  
+**CA-ACA-06.** POST disciplina válida → 201 e o corpo inclui `tipo`, `tipoEntrega`, `chTotal` e as parcelas.
 
 ```gherkin
 @QA-ACA-01
@@ -310,6 +312,20 @@ Cenário: Criar e buscar campus
   Quando envio POST /api/v1/academic/campi com nome, codigoPolo, cidade, estado e endereco
   Então a resposta é 201
   E GET /academic/campi/:id devolve o mesmo codigoPolo
+
+@QA-ACA-05
+Cenário: Disciplina com carga horária inconsistente
+  Dado um JWT de ADMIN
+  Quando envio POST /api/v1/academic/disciplinas com chTotal 60, chPresencial 40, chSincrona 10, chAssincrona 0
+  Então a resposta é 400
+  E a mensagem informa que a soma das parcelas deve ser idêntica à CH total
+
+@QA-ACA-06
+Cenário: Disciplina válida devolve carga e tipo
+  Dado um JWT de ADMIN
+  Quando envio POST /api/v1/academic/disciplinas com nome, codigo, tipo ESPECIFICO, tipoEntrega PRESENCIAL_FISICO, chTotal 60, presencial 60, sincrona 0, assincrona 0 e chExtensao 0
+  Então a resposta é 201
+  E o corpo inclui tipo, tipoEntrega, chTotal, chPresencial, chSincrona, chAssincrona e chExtensao
 ```
 
 ### 8.2 Matriz e componente
@@ -329,7 +345,9 @@ Cenário: Criar e buscar campus
 **CA-MTZ-04.** PATCH só `semestreIdeal` (sem CH) não revalida soma.  
 **CA-MTZ-05.** PATCH alterando `chTotal` sem ajustar parcelas inconsistentes → 400.  
 **CA-MTZ-06.** `GET /academic/matrizes?cursoId=` filtra.  
-**CA-MTZ-07.** `GET /academic/matrizes/:id` inclui componentes.
+**CA-MTZ-07.** `GET /academic/matrizes/:id` inclui componentes.  
+**CA-MTZ-08.** DELETE matriz com componente → 409 e mensagem para remover os componentes.  
+**CA-MTZ-09.** DELETE matriz sem componente e sem matrícula → 200.
 
 ```gherkin
 @QA-MTZ-02
@@ -344,6 +362,19 @@ Cenário: Carga horária consistente
   Dado uma matriz e uma disciplina existentes
   Quando adiciono componente com chTotal 60, presencial 40, sincrona 10, assincrona 10, extensao 8
   Então a resposta é 201
+
+@QA-MTZ-08
+Cenário: Matriz com componente não pode ser apagada
+  Dado uma matriz com pelo menos um componente
+  Quando envio DELETE /api/v1/academic/matrizes/:id
+  Então a resposta é 409
+  E a mensagem pede para remover os componentes antes de excluir a matriz
+
+@QA-MTZ-09
+Cenário: Matriz vazia sem matrícula pode ser apagada
+  Dado uma matriz sem componentes e sem matrículas
+  Quando envio DELETE /api/v1/academic/matrizes/:id
+  Então a resposta é 200
 ```
 
 ### 8.3 Auditoria MEC
@@ -742,6 +773,8 @@ Cenário: Responder reclamação
 | DELETE campus/curso/matriz com matrícula filha   | 409                                 | QA-DEL-01 |
 | DELETE disciplina ou usuário professor com turma | 409                                 | QA-DEL-02 |
 | DELETE componente com alunos enturmados na disciplina | 409                              | QA-DEL-07 |
+| DELETE matriz com componente                     | 409                                 | QA-MTZ-08 |
+| DELETE matriz sem componente e sem matrícula     | 200                                 | QA-MTZ-09 |
 | DELETE turma                                     | 200; diários somem                  | QA-DEL-03 |
 | DELETE matrícula                                 | 200; aluno permanece                | QA-DEL-04 |
 | DELETE responsável (via user)                    | aluno fica com `responsavelId` null | QA-DEL-05 |

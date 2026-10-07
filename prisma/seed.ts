@@ -270,11 +270,33 @@ const ensureCampus = async ({
   });
 };
 
-const ensureDisciplina = async ({codigo, nome}: {codigo: string; nome: string}) => {
+const ensureDisciplina = async ({
+  codigo,
+  nome,
+  tipo,
+  tipoEntrega,
+  chTotal,
+  chPresencial,
+  chSincrona,
+  chAssincrona,
+  chExtensao,
+}: {
+  codigo: string;
+  nome: string;
+  tipo: "CORE_VIDA_CARREIRA" | "ESPECIFICO" | "EXTENSAO";
+  tipoEntrega: "PRESENCIAL_FISICO" | "SINCRONO_MEDIADO" | "ASSINCRONO_DIGITAL";
+  chTotal: number;
+  chPresencial: number;
+  chSincrona: number;
+  chAssincrona: number;
+  chExtensao: number;
+}) => {
+  const carga = {nome, tipo, tipoEntrega, chTotal, chPresencial, chSincrona, chAssincrona, chExtensao};
+
   return prisma.disciplina.upsert({
     where: {codigo},
-    update: {nome},
-    create: {codigo, nome},
+    update: carga,
+    create: {codigo, ...carga},
   });
 };
 
@@ -486,8 +508,28 @@ async function main() {
     "POLO-EAD": poloEad,
   };
 
-  const etica = await ensureDisciplina({codigo: "ETICA", nome: "Ética e Cidadania"});
-  const extensao = await ensureDisciplina({codigo: "EXTUNIV", nome: "Extensão Universitária"});
+  const etica = await ensureDisciplina({
+    codigo: "ETICA",
+    nome: "Ética e Cidadania",
+    tipo: "CORE_VIDA_CARREIRA",
+    tipoEntrega: "PRESENCIAL_FISICO",
+    chTotal: 60,
+    chPresencial: 60,
+    chSincrona: 0,
+    chAssincrona: 0,
+    chExtensao: 0,
+  });
+  const extensao = await ensureDisciplina({
+    codigo: "EXTUNIV",
+    nome: "Extensão Universitária",
+    tipo: "EXTENSAO",
+    tipoEntrega: "PRESENCIAL_FISICO",
+    chTotal: 40,
+    chPresencial: 40,
+    chSincrona: 0,
+    chAssincrona: 0,
+    chExtensao: 40,
+  });
 
   const agora = dayjs();
   const anoLetivo = agora.year();
@@ -536,7 +578,16 @@ async function main() {
         },
       }));
 
-    const especifica = await ensureDisciplina(item.disciplina);
+    const especifica = await ensureDisciplina({
+      ...item.disciplina,
+      tipo: "ESPECIFICO",
+      tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "ASSINCRONO_DIGITAL",
+      chTotal: 60,
+      chPresencial: isPresencial ? 60 : 8,
+      chSincrona: isPresencial ? 0 : 12,
+      chAssincrona: isPresencial ? 0 : 40,
+      chExtensao: 0,
+    });
 
     await ensureComponente({
       matrizCurricularId: matriz.id,
