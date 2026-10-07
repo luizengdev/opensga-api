@@ -14,7 +14,7 @@ Este documento define a arquitetura, padrões de engenharia, stack tecnológica 
 - **Modelo**: Repositórios (Backend API REST).
 - **Padrão Backend**: Arquitetura Hexagonal (Ports & Adapters) orientada a módulos de domínio.
 - **Perfis de Acesso (RBAC)**: `ADMIN`, `PROFESSOR`, `ALUNO`, `RESPONSAVEL`.
-- **Produto atual**: sistema interno (login unificado + dashboards ADMIN e PROFESSOR) e inscrição pública (`GET /api/catalogo`, `POST /api/inscricao` — Checkout Stripe só se o valor devido agora for > 0). Portal aluno/responsável self-service fica para depois — não abrir CRUD desses papéis agora.
+- **Produto atual**: sistema interno (login unificado + dashboards ADMIN e PROFESSOR), inscrição pública (`GET /api/catalogo`, `POST /api/inscricao` — Checkout Stripe só se o valor devido agora for > 0) e portal do aluno/responsável (`GET /portal/contexto`, `POST /portal/ouvidoria`). Não abrir CRUD desses papéis: leitura e ouvidoria própria no portal; cadastro continua `ADMIN`.
 - **Testes / QA**: especificação em [docs/qa-arquitetura-testes.md](docs/qa-arquitetura-testes.md) (regras, CA, BDD `QA-*`). Fonte única para Postman **e** Playwright (`test('QA-…')`). Ao mudar regra de negócio, atualize esse arquivo antes da collection ou do E2E.
 
 ---

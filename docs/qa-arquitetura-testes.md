@@ -2,8 +2,8 @@
 
 | Campo              | Valor                                                          |
 | :----------------- | :------------------------------------------------------------- |
-| Versão             | 1.0.0                                                          |
-| Data               | 02/10/2026                                                     |
+| Versão             | 1.1.0                                                          |
+| Data               | 07/10/2026                                                     |
 | Público            | QA, Postman/Newman, Playwright (E2E do front), desenvolvimento |
 | Base HTTP          | `{{API_BASE_URL}}` (dev: `http://localhost:3333`)              |
 | Prefixo de negócio | `/api/v1`                                                      |
@@ -21,7 +21,7 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 3. Execute os critérios de aceite (CA) e os cenários Gherkin. Cada cenário tem um **ID de rastreio** para o Postman (`QA-AUTH-01`, etc.).
 4. Falha = divergência entre este spec e a API. Se a API estiver certa e o spec errado, atualize este arquivo.
 
-**Fora de escopo nesta versão:** portal aluno/responsável, upload Cloudinary, paginação, forgot-password, suíte automatizada no CI.
+**Fora de escopo nesta versão:** upload Cloudinary, paginação, forgot-password, suíte automatizada no CI. Portal aluno/responsável entra na seção 5 (`QA-PORTAL-*`).
 
 ---
 
@@ -94,7 +94,7 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 | `baseUrl`                                                    | `http://localhost:3333`    |
 | `token_admin`                                                | JWT admin                  |
 | `token_professor`                                            | JWT professor              |
-| `token_aluno`                                                | JWT aluno (só login/`/me`) |
+| `token_aluno`                                                | JWT aluno (login, `/me`, portal) |
 | `campusId`, `cursoId`, `matrizId`, `disciplinaId`, `turmaId` | UUIDs do seed / setup      |
 | `matriculaId`, `diarioId`, `professorId`, `alunoUserId`      | UUIDs do fluxo             |
 
@@ -108,7 +108,7 @@ Rodar seed: `npx prisma db seed --config prisma7.config.ts`.
 | :-------------- | :-------------------------------------------------------------------- | :----------------- | :---------- | :------------------------------------------ |
 | Secretaria      | `testeadmin@opensga.dev` ou `000.000.000-00`                          | `Admin@123456`     | `ADMIN`     | CRUD + dashboard admin                      |
 | Docente         | `professor@opensga.dev`, CPF `111.111.111-11` ou matrícula `PROF-001` | `Professor@123456` | `PROFESSOR` | Turmas próprias, diário, dashboard, avaliar |
-| Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001`          | `Aluno@123456`     | `ALUNO`     | **Somente** login e `/me`                   |
+| Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001`          | `Aluno@123456`     | `ALUNO`     | Login, `/me` e portal (`/portal/contexto`, `/portal/ouvidoria`) |
 
 Dados acadêmicos criados pelo seed: campi `SEDE-REC` (5 cursos PRESENCIAL) e `POLO-EAD` (5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem AV/AVS, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`.
 
@@ -118,21 +118,22 @@ Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`get
 
 ## 5. Matriz RBAC
 
-| Recurso                                                                              | Público | ADMIN |     PROFESSOR      | ALUNO |
-| :----------------------------------------------------------------------------------- | :-----: | :---: | :----------------: | :---: |
-| `GET /health`                                                                        |   sim   |   —   |         —          |   —   |
-| `POST /auth/login`                                                                   |   sim   |   —   |         —          |   —   |
-| `GET /auth/me`, `PATCH /auth/senha`                                                  |         |  sim  |        sim         |  sim  |
-| CRUD users, academic (exceto GET turma), matriculas, faturas, ouvidoria              |         |  sim  |        403         |  403  |
-| `GET /comunicados`                                                                   |         | todas | só o seu papel     |  403  |
-| POST/PATCH/DELETE `/comunicados`                                                     |         |  sim  |        403         |  403  |
-| `GET /academic/turmas`, `GET /academic/turmas/:id`                                   |         | todas |     só as suas     |  403  |
-| `GET /diario`, `GET /diario/:id`                                                     |         | todos | só das suas turmas |  403  |
-| `POST /diario/enturmar`, `DELETE /diario/:id`                                        |         |  sim  |        403         |  403  |
-| `PATCH /diario/avaliar`                                                              |         |  sim  | só se for titular  |  403  |
-| `GET /dashboard/admin`                                                               |         |  sim  |        403         |  403  |
-| `GET /dashboard/professor`                                                           |         |  403  |        sim         |  403  |
-| `GET /portal/contexto`, `POST /portal/ouvidoria`                                     |         |  403  |        403         |  sim  |
+| Recurso                                                                              | Público | ADMIN |     PROFESSOR      | ALUNO / RESPONSAVEL |
+| :----------------------------------------------------------------------------------- | :-----: | :---: | :----------------: | :-----------------: |
+| `GET /health`                                                                        |   sim   |   —   |         —          |          —          |
+| `POST /auth/login`                                                                   |   sim   |   —   |         —          |          —          |
+| `GET /auth/me`, `PATCH /auth/senha`                                                  |         |  sim  |        sim         |         sim         |
+| CRUD users, academic (exceto GET turma), matriculas, faturas, ouvidoria ADMIN        |         |  sim  |        403         |         403         |
+| `GET /comunicados`                                                                   |         | todas | só o seu papel     |         403         |
+| POST/PATCH/DELETE `/comunicados`                                                     |         |  sim  |        403         |         403         |
+| `GET /academic/turmas`, `GET /academic/turmas/:id`                                   |         | todas |     só as suas     |         403         |
+| `GET /diario`, `GET /diario/:id`                                                     |         | todos | só das suas turmas |         403         |
+| `POST /diario/enturmar`, `DELETE /diario/:id`                                        |         |  sim  |        403         |         403         |
+| `PATCH /diario/avaliar`                                                              |         |  sim  | só se for titular  |         403         |
+| `POST /diario/fechar-semestre`                                                       |         |  sim  | só se for titular  |         403         |
+| `GET /dashboard/admin`                                                               |         |  sim  |        403         |         403         |
+| `GET /dashboard/professor`                                                           |         |  403  |        sim         |         403         |
+| `GET /portal/contexto`, `POST /portal/ouvidoria`                                     |         |  403  |        403         |         sim         |
 
 **CA-RBAC-01.** Sem `Authorization`, toda rota protegida retorna 401.  
 **CA-RBAC-02.** Token de professor em rota ADMIN-only retorna 403.  
@@ -180,7 +181,7 @@ Cenário: Professor tenta criar campus
 
 - Login único por e-mail, CPF, RA ou matrícula funcional.
 - Senha de login: mínimo 6 caracteres; senha nova (`PATCH /auth/senha`): mínimo 8.
-- `/me` devolve `id`, `nome`, `email`, `cpf`, `role`, `avatarUrl`, `ativo`, `aluno.{id, ra}|null`, `professor.{id, matricula, titulacao}|null`.
+- `/me` devolve `id`, `nome`, `email`, `cpf`, `role`, `avatarUrl`, `ativo`, `aluno.{id, ra}|null`, `professor.{id, matricula, titulacao}|null` e `dependentes[]` (sempre presente; preenchido para `RESPONSAVEL`).
 - Troca de senha exige senha atual correta.
 - Conta inativa não autentica e não usa JWT antigo.
 
@@ -191,7 +192,7 @@ Cenário: Professor tenta criar campus
 **CA-AUTH-03.** Login aluno com RA retorna `role = ALUNO`.  
 **CA-AUTH-04.** Identificador ou senha inválidos → 401.  
 **CA-AUTH-05.** `GET /auth/me` do professor inclui `professor.id` e `professor.matricula`.  
-**CA-AUTH-06.** `GET /auth/me` do aluno inclui `aluno.id` e `aluno.ra`.  
+**CA-AUTH-06.** `GET /auth/me` do aluno inclui `aluno.id`, `aluno.ra` e `dependentes` (array, vazio se não for responsável).  
 **CA-AUTH-07.** `PATCH /auth/senha` com senha atual correta → 200 `{ message }`; login seguinte só aceita a senha nova.  
 **CA-AUTH-08.** Senha atual incorreta → 400.  
 **CA-AUTH-09.** Usuário `ativo = false` no login → 401; JWT emitido antes da inativação também → 401.

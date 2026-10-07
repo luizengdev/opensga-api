@@ -8,7 +8,8 @@
 
 | Versão | Data de Elaboração | Responsável | Perfil | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **1.1.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Homologado |
+| **1.2.0** | 07/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Homologado |
+| **1.1.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Substituído |
 | **1.0.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Substituído |
 
 ---
@@ -145,13 +146,14 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 
 | Domínio | Capacidade ADMIN exposta |
 | :--- | :--- |
-| Identidade | Login unificado, `GET /auth/me` (ids de aluno/professor e `ativo`) e `PATCH /auth/senha`. CRUD de usuários, professores e administradores; consulta de alunos e responsáveis (`/users`). JWT de conta inativa é recusado. |
+| Identidade | Login unificado, `GET /auth/me` (`ativo`, ids de aluno/professor e `dependentes[]`) e `PATCH /auth/senha`. CRUD de usuários, professores e administradores; consulta de alunos e responsáveis (`/users`). JWT de conta inativa é recusado. |
 | Currículo | CRUD de campus, curso, disciplina, matriz, componente e turma (`/academic`). Auditoria MEC da matriz. Professor lista/consulta apenas as próprias turmas. |
 | Matrícula | Efetivação, consulta por status, alteração de status e exclusão do vínculo (`/matriculas`). O aluno não é apagado junto com a matrícula. |
 | Diário | Enturmação ADMIN; listagem/consulta ADMIN+PROFESSOR (filtro JWT); desenturmação ADMIN; lançamento AV/AVS/AV3 pelo titular (`PATCH /diario/avaliar`); fechamento atômico (`POST /diario/fechar-semestre`). |
 | Dashboards | `GET /dashboard/admin` e `GET /dashboard/professor` com KPIs do período letivo. |
 | Financeiro | Precificação por curso (`/financeiro/precos`, ADMIN): o valor é cadastrado no OpenSGA e sincronizado como Product/Price no Stripe. Emissão de faturas (`/financeiro/faturas`). Inscrição/checkout (`POST /api/inscricao`, `POST /api/checkout`) só abrem o Stripe se o valor devido agora for maior que zero; isenção (cupom 100% na 1ª parcela) conclui em `PRE_MATRICULADO` sem cartão e agenda fatura `PENDENTE` no ciclo seguinte. Quando há cobrança, o Checkout oferece cartão e boleto (voucher em 3 dias). Webhook `POST /webhooks/stripe` ativa matrícula em `checkout.session.completed` só se `payment_status=paid` (cartão) ou em `checkout.session.async_payment_succeeded` (boleto); boleto gerado (`completed` + `unpaid`) e `async_payment_failed` não efetivam a vaga. Também concilia `invoice.payment_succeeded` e `invoice.payment_failed`. |
 | Comunicação | CRUD de comunicados por público-alvo (`/comunicados`) e fluxo de ouvidoria: abrir, responder, fechar e excluir (`/ouvidoria/reclamacoes`). |
+| Portal do aluno | `GET /portal/contexto` (`ALUNO` / `RESPONSAVEL`): vínculo, diários, faturas, matriz, comunicados e protocolos do aluno ou dependente (`alunoId` só se vinculado). `POST /portal/ouvidoria` abre protocolo em nome do JWT. Sem CRUD desses papéis. |
 
 **Regras de exclusão (integridade referencial)**
 
@@ -230,7 +232,11 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 [Gera Senha Provisória criptografada para o Aluno (e Responsável)]
        │
        ▼
-[Cria Matrícula com status "ATIVO" no 1º Semestre]
+[Cria Matrícula no 1º Semestre]
+  ├── Secretaria (`POST /matriculas`) -> status ATIVO
+  └── Inscrição pública / Checkout -> PRE_MATRICULADO;
+         webhook Stripe (pagamento confirmado) -> ATIVO;
+         isenção 100% permanece PRE_MATRICULADO e agenda fatura PENDENTE
        │
        ▼
 [Dispara e-mail de Boas-Vindas com RA, link do portal e senha provisória]
@@ -342,7 +348,7 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 - **RA (Registro Acadêmico)**: Código alfanumérico institucional exclusivo que identifica univocamente o discente durante toda a sua trajetória acadêmica na IES.
 - **Responsável**: Pessoa física legal ou financeiramente responsável pelo estudante perante a instituição, possuindo credenciais próprias para acompanhamento acadêmico e financeiro.
 - **Status da Matrícula**:
-  - `PRE_MATRICULADO`: Candidato em fase de análise de documentação ou assinatura de contrato.
+  - `PRE_MATRICULADO`: Candidato em ingresso (inscrição pública/Checkout) aguardando pagamento ou documentação; não efetivado até o webhook Stripe (ou permanece assim em isenção da 1ª parcela).
   - `ATIVO`: Aluno regular, apto a enturmar-se em turmas do período e a acessar as instalações da instituição.
   - `TRANCADO`: Suspensão temporária do vínculo acadêmico a pedido do estudante, preservando o direito à reabertura de estudos.
   - `CANCELADO`: Rompimento definitivo do vínculo acadêmico por desistência ou rescisão contratual.
