@@ -12,6 +12,7 @@ import {academicRoutes} from "./modules/academic/academic-route.js";
 import {authRoutes} from "./modules/auth/auth-route.js";
 import {communicationsRoutes} from "./modules/communications/communications-route.js";
 import {dashboardRoutes} from "./modules/dashboard/dashboard-route.js";
+import {documentsRoutes} from "./modules/documents/documents-route.js";
 import {enrollmentRoutes} from "./modules/enrollment/enrollment-route.js";
 import {checkoutRoutes, financialRoutes} from "./modules/financial/financial-route.js";
 import {stripeWebhookRoutes} from "./modules/financial/stripe-webhook-route.js";
@@ -134,6 +135,7 @@ await app.register(checkoutRoutes, {prefix: "/api"});
 await app.register(financialRoutes, {prefix: "/api/v1"});
 await app.register(stripeWebhookRoutes);
 await app.register(communicationsRoutes, {prefix: "/api/v1"});
+await app.register(documentsRoutes, {prefix: "/api/v1"});
 await app.register(dashboardRoutes, {prefix: "/api/v1"});
 await app.register(portalRoutes, {prefix: "/api/v1"});
 

@@ -136,7 +136,8 @@ Prefixo de negócio: **`/api/v1`**. Inscrição pública também em `/api` (sem 
 | Webhook | `POST /webhooks/stripe` | assinatura Stripe |
 | Comunicação | `/comunicados`, `/ouvidoria/reclamacoes` | `ADMIN` (GET comunicados também `PROFESSOR`) |
 | Dashboard | `/dashboard/admin`, `/dashboard/professor` | papel correspondente |
-| Portal | `GET /portal/contexto`, `POST /portal/ouvidoria` | `ALUNO` / `RESPONSAVEL` |
+| Documentos | `/documentos/modelos` | `ADMIN` |
+| Portal | `GET /portal/contexto`, `GET /portal/documentos`, `POST /portal/documentos/emitir`, `POST /portal/ouvidoria` | `ALUNO` / `RESPONSAVEL` |
 
 ¹ GET de turmas também para `PROFESSOR` (somente as suas).
 

@@ -2,6 +2,16 @@ import {FastifyInstance} from "fastify";
 import {ZodTypeProvider} from "fastify-type-provider-zod";
 
 import {Role} from "../../generated/prisma/enums.js";
+import {
+  emitirPortalDocumentoHandler,
+  listPortalDocumentosHandler,
+} from "../documents/documents-controller.js";
+import {
+  documentoEmitidoSchema,
+  emitirDocumentoSchema,
+  errorResponseSchema as documentoErrorResponseSchema,
+  portalDocumentoCatalogoSchema,
+} from "../documents/documents-schemas.js";
 import {createPortalReclamacaoHandler, getPortalContextoHandler} from "./portal-controller.js";
 import {
   createPortalReclamacaoSchema,
@@ -56,5 +66,45 @@ export const portalRoutes = async (app: FastifyInstance): Promise<void> => {
       },
     },
     createPortalReclamacaoHandler,
+  );
+
+  typedApp.get(
+    "/portal/documentos",
+    {
+      ...acessoPortal,
+      schema: {
+        tags: ["Portal do Aluno"],
+        summary: "Listar modelos oficiais disponíveis para emissão",
+        security: [{bearerAuth: []}],
+        response: {
+          200: portalDocumentoCatalogoSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+        },
+      },
+    },
+    listPortalDocumentosHandler,
+  );
+
+  typedApp.post(
+    "/portal/documentos/emitir",
+    {
+      ...acessoPortal,
+      schema: {
+        tags: ["Portal do Aluno"],
+        summary: "Emitir documento oficial com o texto da secretaria e os dados do vínculo",
+        security: [{bearerAuth: []}],
+        body: emitirDocumentoSchema,
+        response: {
+          200: documentoEmitidoSchema,
+          400: documentoErrorResponseSchema,
+          401: errorResponseSchema,
+          403: errorResponseSchema,
+          404: documentoErrorResponseSchema,
+          409: documentoErrorResponseSchema,
+        },
+      },
+    },
+    emitirPortalDocumentoHandler,
   );
 };

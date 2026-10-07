@@ -108,9 +108,9 @@ Rodar seed: `npx prisma db seed --config prisma7.config.ts`.
 | :-------------- | :-------------------------------------------------------------------- | :----------------- | :---------- | :------------------------------------------ |
 | Secretaria      | `testeadmin@opensga.dev` ou `000.000.000-00`                          | `Admin@123456`     | `ADMIN`     | CRUD + dashboard admin                      |
 | Docente         | `professor@opensga.dev`, CPF `111.111.111-11` ou matrícula `PROF-001` | `Professor@123456` | `PROFESSOR` | Turmas próprias, diário, dashboard, avaliar |
-| Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001`          | `Aluno@123456`     | `ALUNO`     | Login, `/me` e portal (`/portal/contexto`, `/portal/ouvidoria`) |
+| Discente (demo) | `aluno@opensga.dev`, CPF `222.222.222-22` ou RA `2026000001`          | `Aluno@123456`     | `ALUNO`     | Login, `/me` e portal (`/portal/contexto`, `/portal/documentos`, `/portal/ouvidoria`) |
 
-Dados acadêmicos criados pelo seed: `SEDE-REC` (`tipo = CAMPI`, 5 cursos PRESENCIAL) e `POLO-EAD` (`tipo = POLO`, 5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** com `cursoId` e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem AV/AVS, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`.
+Dados acadêmicos criados pelo seed: `SEDE-REC` (`tipo = CAMPI`, 5 cursos PRESENCIAL) e `POLO-EAD` (`tipo = POLO`, 5 cursos EAD); cada curso tem matriz 2026.1 (Ética + específica + extensão ≥ 10%), 1 professor, 2 alunos `ATIVO`, turma do **período corrente** com `cursoId` e diários. Personas canônicas inalteradas: `professor@opensga.dev` (turma `CALC1-{ano}.{semestre}`), `aluno@opensga.dev` (RA `2026000001`, diário sem AV/AVS, fatura `PENDENTE`). Demais logins: `professor.{sigla}@opensga.dev` e `aluno.{sigla}.{1|2}@opensga.dev` (senhas iguais às personas). 1 reclamação `ABERTO`. Quatro `ModeloDocumento` ativos (declaração, histórico, quitação, carteirinha); o seed não sobrescreve texto já editado pela Secretaria.
 
 Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`getMonth() < 6`), senão `2`. Dashboard e seed usam a mesma regra.
 
@@ -133,15 +133,22 @@ Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`get
 | `POST /diario/fechar-semestre`                                                       |         |  sim  | só se for titular  |         403         |
 | `GET /dashboard/admin`                                                               |         |  sim  |        403         |         403         |
 | `GET /dashboard/professor`                                                           |         |  403  |        sim         |         403         |
-| `GET /portal/contexto`, `POST /portal/ouvidoria`                                     |         |  403  |        403         |         sim         |
+| `GET /portal/contexto`, `GET /portal/documentos`, `POST /portal/documentos/emitir`, `POST /portal/ouvidoria` |         |  403  |        403         |         sim         |
+| `GET /documentos/modelos`, `PATCH /documentos/modelos/:id`                            |         |  sim  |        403         |         403         |
 
 **CA-RBAC-01.** Sem `Authorization`, toda rota protegida retorna 401.  
 **CA-RBAC-02.** Token de professor em rota ADMIN-only retorna 403.  
-**CA-RBAC-03.** Token de aluno em CRUD da secretaria retorna 403. Leitura própria fica em `GET /portal/contexto`; protocolo próprio em `POST /portal/ouvidoria`.
+**CA-RBAC-03.** Token de aluno em CRUD da secretaria retorna 403. Leitura própria fica em `GET /portal/contexto`; documentos em `GET /portal/documentos` e `POST /portal/documentos/emitir`; protocolo próprio em `POST /portal/ouvidoria`.
 
 **CA-PORTAL-01.** `GET /portal/contexto` com JWT ALUNO devolve só o vínculo, diários, faturas e comunicados daquele aluno.  
 **CA-PORTAL-02.** Responsável só consulta dependente vinculado (`alunoId`); outro UUID responde 403.  
 **CA-PORTAL-03.** `POST /portal/ouvidoria` grava protocolo com `usuarioId` do JWT; sem fila administrativa.
+
+**CA-DOC-01.** `GET /portal/documentos` com JWT ALUNO devolve só modelos `ativo`.  
+**CA-DOC-02.** `POST /portal/documentos/emitir` com `DECLARACAO_MATRICULA` ou `CARTEIRINHA_ESTUDANTIL` e matrícula diferente de `ATIVO` responde 400.  
+**CA-DOC-03.** `POST /portal/documentos/emitir` com `QUITACAO_FINANCEIRA` e fatura `ATRASADA` responde 409.  
+**CA-DOC-04.** Emissão bem-sucedida interpola placeholders do `corpo`, persiste `EmissaoDocumento` com código `AUT-…` e devolve disciplinas/matriz estruturadas.  
+**CA-DOC-05.** `PATCH /documentos/modelos/:id` com `ativo: false` remove o tipo do catálogo do portal. Professor e aluno em `/documentos/modelos` recebem 403.
 
 ```gherkin
 @QA-PORTAL-01
@@ -155,6 +162,43 @@ Cenário: Aluno lê o próprio contexto
 Cenário: Responsável não acessa aluno de outra guarda
   Dado que estou autenticado como RESPONSAVEL
   Quando solicito GET /api/v1/portal/contexto?alunoId=uuid-de-outro-aluno
+  Então a resposta é 403
+
+@QA-DOC-01
+Cenário: Aluno lista só documentos liberados
+  Dado que estou autenticado como ALUNO
+  E a Secretaria desativou o modelo HISTORICO_PARCIAL
+  Quando solicito GET /api/v1/portal/documentos
+  Então a resposta é 200
+  E o corpo não contém tipo HISTORICO_PARCIAL
+
+@QA-DOC-02
+Cenário: Declaração exige matrícula ativa
+  Dado que estou autenticado como ALUNO
+  E a matrícula do aluno não está ATIVO
+  Quando envio POST /api/v1/portal/documentos/emitir com tipo DECLARACAO_MATRICULA
+  Então a resposta é 400
+
+@QA-DOC-03
+Cenário: Quitação bloqueada por fatura atrasada
+  Dado que estou autenticado como ALUNO
+  E o aluno possui fatura ATRASADA
+  Quando envio POST /api/v1/portal/documentos/emitir com tipo QUITACAO_FINANCEIRA
+  Então a resposta é 409
+
+@QA-DOC-04
+Cenário: Emissão interpola o texto da Secretaria
+  Dado que estou autenticado como ALUNO
+  E a matrícula está ATIVO
+  Quando envio POST /api/v1/portal/documentos/emitir com tipo DECLARACAO_MATRICULA
+  Então a resposta é 200
+  E o corpo contém o nome do aluno no texto interpolado
+  E codigoAutenticacao começa com AUT-
+
+@QA-DOC-05
+Cenário: Professor não edita modelos de documento
+  Dado que estou autenticado como PROFESSOR
+  Quando solicito GET /api/v1/documentos/modelos
   Então a resposta é 403
 ```
 
@@ -958,6 +1002,7 @@ Ambientes: `local` (`baseUrl=http://localhost:3333`) e, depois, `staging`.
 | QA-TUR-03/04, QA-DIA-_, QA-DASH-_                | Portal professor | P0         |
 | QA-DEL-*                                         | Integridade      | P1         |
 | QA-USR-_, QA-ACA-_, QA-FIN-_, QA-COM-_, QA-OUV-* | CRUD             | P1         |
+| QA-DOC-*                                         | Documentos       | P1         |
 | QA-E2E-01                                        | Regressão        | P0         |
 | Smoke seção 16                                   | Gate             | P0         |
 

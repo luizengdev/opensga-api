@@ -14,7 +14,7 @@ Este documento define a arquitetura, padrões de engenharia, stack tecnológica 
 - **Modelo**: Repositórios (Backend API REST).
 - **Padrão Backend**: Arquitetura Hexagonal (Ports & Adapters) orientada a módulos de domínio.
 - **Perfis de Acesso (RBAC)**: `ADMIN`, `PROFESSOR`, `ALUNO`, `RESPONSAVEL`.
-- **Produto atual**: sistema interno (login unificado + dashboards ADMIN e PROFESSOR), inscrição pública (`GET /api/catalogo`, `POST /api/inscricao` — Checkout Stripe só se o valor devido agora for > 0) e portal do aluno/responsável (`GET /portal/contexto`, `POST /portal/ouvidoria`). Não abrir CRUD desses papéis: leitura e ouvidoria própria no portal; cadastro continua `ADMIN`.
+- **Produto atual**: sistema interno (login unificado + dashboards ADMIN e PROFESSOR), inscrição pública (`GET /api/catalogo`, `POST /api/inscricao` — Checkout Stripe só se o valor devido agora for > 0) e portal do aluno/responsável (`GET /portal/contexto`, `GET /portal/documentos`, `POST /portal/documentos/emitir`, `POST /portal/ouvidoria`). Não abrir CRUD desses papéis: leitura, emissão de documentos e ouvidoria própria no portal; cadastro e modelos de certidão continuam `ADMIN`.
 - **Testes / QA**: especificação em [docs/qa-arquitetura-testes.md](docs/qa-arquitetura-testes.md) (regras, CA, BDD `QA-*`). Fonte única para Postman **e** Playwright (`test('QA-…')`). Ao mudar regra de negócio, atualize esse arquivo antes da collection ou do E2E.
 
 ---
@@ -76,6 +76,7 @@ opensga-api/
     │   ├── grading/                # Diário de Classe, Notas (AV, AVS, AV3) e Faltas
     │   ├── financial/              # Faturas acadêmicas, Checkout de matrícula e webhooks Stripe
     │   ├── communications/         # Comunicados institucionais e ouvidoria
+    │   ├── documents/              # Modelos oficiais e emissão no portal do aluno
     │   └── dashboard/              # KPIs leves ADMIN e PROFESSOR
     └── index.ts                    # Bootstrap, /health e error handler HTTP
 ```
@@ -96,8 +97,11 @@ Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 - `POST /api/checkout` e `POST /api/v1/checkout` — Checkout de matrícula (público, aluno já existente); isenção conclui sem sessão Stripe
 - `POST /webhooks/stripe` — webhook Stripe (raw body, público, fora de `/api/v1`)
 - `/comunicados` e `/ouvidoria/reclamacoes` — mural e ouvidoria (`ADMIN`)
+- `/documentos/modelos` — catálogo de certidões oficiais (`ADMIN`): `GET` lista; `PATCH /documentos/modelos/:id` texto, finalidade e `ativo`
 - `/dashboard/admin` (`ADMIN`) e `/dashboard/professor` (`PROFESSOR`) — resumos do período (`anoLetivo` / `semestreLetivo` opcionais)
 - `GET /portal/contexto` (`ALUNO` + `RESPONSAVEL`) — contexto do aluno ou dependente (`alunoId` opcional); filtra diários, faturas, matriz, comunicados e protocolos próprios
+- `GET /portal/documentos` (`ALUNO` + `RESPONSAVEL`) — modelos `ativo` liberados pela Secretaria
+- `POST /portal/documentos/emitir` (`ALUNO` + `RESPONSAVEL`) — interpola o `corpo` do modelo; declaração/carteirinha exigem matrícula `ATIVO`; quitação 409 se fatura `ATRASADA`
 - `POST /portal/ouvidoria` (`ALUNO` + `RESPONSAVEL`) — abre protocolo em nome do JWT
 - `GET /health` — `{ status: "ok" }`, público, fora de `/api/v1`
 
@@ -193,11 +197,12 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 
 Definir `onDelete` explicitamente no Prisma. Antes de `delete`, o service conta filhos Restrict e lança erro de domínio **409** — não deixar o Prisma devolver P2003 cru.
 
-- **Cascade**: `User` → perfil (Professor / Aluno / Responsável) e `Reclamacao`; `Campus` → `Curso` → `Matriz` → `Componente`; `Campus` → `Turma`; `Curso` → `PrecoCurso`; `Aluno` → `Matricula` / `Fatura`; `Turma` ou `Matricula` → `DiarioClasse`.
-- **Restrict** (409 se houver filho): `Turma.curso`, `Turma.disciplina`, `Turma.professor`, `Matricula.curso`, `Matricula.matrizCurricular`. DELETE curso com turmas ofertadas → 409.
+- **Cascade**: `User` → perfil (Professor / Aluno / Responsável) e `Reclamacao`; `Campus` → `Curso` → `Matriz` → `Componente`; `Campus` → `Turma`; `Curso` → `PrecoCurso`; `Aluno` → `Matricula` / `Fatura` / `EmissaoDocumento`; `Turma` ou `Matricula` → `DiarioClasse`.
+- **Restrict** (409 se houver filho): `Turma.curso`, `Turma.disciplina`, `Turma.professor`, `Matricula.curso`, `Matricula.matrizCurricular`, `EmissaoDocumento.modelo`. DELETE curso com turmas ofertadas → 409.
 - **SetNull**: `Aluno.responsavelId` ao apagar o responsável.
 - Não apagar o próprio usuário autenticado. Apagar matrícula não apaga o aluno.
 - **Transferência interna** (`ADMIN`): `GET /matriculas/:id/transferencia-preview` e `POST /matriculas/:id/transferencia` com `{ cursoId, matrizCurricularId }`. Origem `ATIVO` ou `TRANCADO`; destino outro `cursoId` (curso distinto ou o mesmo programa em outro polo/campus). Mesmo `nome` de curso → move todos os diários; senão só `disciplinaId` presente na matriz de destino. Origem fica `TRANSFERIDO`; destino nasce `ATIVO` (RA, período e semestre de ingresso preservados). 409 se já houver matrícula em aberto no destino.
+- **Documentos oficiais**: catálogo `ModeloDocumento` (um por `TipoDocumento`). ADMIN edita `titulo`, `descricao`, `finalidade`, `corpo` e `ativo` em `PATCH /documentos/modelos/:id`. Portal lista só ativos e emite com placeholders `{{aluno.nome}}`, `{{aluno.cpf}}`, `{{aluno.ra}}`, `{{curso.nome}}`, `{{curso.modalidade}}`, `{{campus.nome}}`, `{{campus.codigoPolo}}`, `{{periodoAtual}}`, `{{semestreIngresso}}`, `{{dataEmissao}}`, `{{codigoAutenticacao}}`, `{{chIntegralizada}}`, `{{chTotalCurso}}`. Histórico, disciplinas do período e carteirinha usam os dados estruturados da emissão. Impressão no browser (`window.print()`), sem PDF no servidor.
 
 ### E. Dashboards internos
 

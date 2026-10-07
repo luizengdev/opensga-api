@@ -89,6 +89,13 @@ enum StatusDisciplina {
   RN
 }
 
+enum TipoDocumento {
+  DECLARACAO_MATRICULA
+  HISTORICO_PARCIAL
+  QUITACAO_FINANCEIRA
+  CARTEIRINHA_ESTUDANTIL
+}
+
 // --- MODELOS DE USUÁRIOS E PERFIS ---
 
 model User {
@@ -147,6 +154,7 @@ model Aluno {
   responsavel Responsavel? @relation("ResponsavelAlunos", fields: [responsavelId], references: [id], onDelete: SetNull)
   matriculas  Matricula[]
   faturas     Fatura[]
+  emissoes    EmissaoDocumento[]
 
   @@map("alunos")
 }
@@ -370,4 +378,34 @@ model Reclamacao {
   usuario User @relation("ReclamacoesAbertas", fields: [usuarioId], references: [id], onDelete: Cascade)
 
   @@map("reclamacoes")
+}
+
+model ModeloDocumento {
+  id           String        @id @default(uuid()) @db.Uuid
+  tipo         TipoDocumento @unique
+  titulo       String        @db.VarChar(200)
+  descricao    String        @db.VarChar(500)
+  finalidade   String        @db.VarChar(500)
+  corpo        String        @db.Text
+  ativo        Boolean       @default(true)
+  criadoEm     DateTime      @default(now()) @db.Timestamptz()
+  atualizadoEm DateTime      @updatedAt @db.Timestamptz()
+
+  emissoes EmissaoDocumento[]
+
+  @@map("modelos_documento")
+}
+
+model EmissaoDocumento {
+  id          String   @id @default(uuid()) @db.Uuid
+  modeloId    String   @db.Uuid
+  alunoId     String   @db.Uuid
+  matriculaId String   @db.Uuid
+  codigo      String   @unique @db.VarChar(40)
+  emitidoEm   DateTime @default(now()) @db.Timestamptz()
+
+  modelo ModeloDocumento @relation(fields: [modeloId], references: [id], onDelete: Restrict)
+  aluno  Aluno           @relation(fields: [alunoId], references: [id], onDelete: Cascade)
+
+  @@map("emissoes_documento")
 }

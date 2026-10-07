@@ -768,6 +768,49 @@ async function main() {
     }
   }
 
+  const modelosDocumento = [
+    {
+      tipo: "DECLARACAO_MATRICULA" as const,
+      titulo: "Declaração de matrícula ativa",
+      descricao: "Atesta vínculo discente no semestre vigente com disciplinas e carga horária.",
+      finalidade: "Estágios, passe estudantil e bancos.",
+      corpo:
+        "Declaramos, para os devidos fins e a quem possa interessar, que o(a) discente {{aluno.nome}}, portador(a) do CPF sob o nº {{aluno.cpf}} e Registro Acadêmico RA {{aluno.ra}}, encontra-se regularmente matriculado(a) e com frequência ativa no curso de {{curso.nome}}, modalidade {{curso.modalidade}}, no polo {{campus.nome}}.\n\nO discente ingressou nesta Instituição de Ensino Superior no período letivo de {{semestreIngresso}} e está cursando atualmente o {{periodoAtual}}º período, estando em conformidade com as exigências regimentais e da Lei de Diretrizes e Bases da Educação Nacional (LDB 9.394/96).",
+    },
+    {
+      tipo: "HISTORICO_PARCIAL" as const,
+      titulo: "Histórico escolar parcial",
+      descricao: "Espelho curricular com disciplinas, médias finais e horas integralizadas.",
+      finalidade: "Transferência, processos seletivos e intercâmbio.",
+      corpo:
+        "Espelho curricular do(a) discente {{aluno.nome}}, RA {{aluno.ra}}, no curso de {{curso.nome}}. Carga horária integralizada: {{chIntegralizada}}h de {{chTotalCurso}}h.",
+    },
+    {
+      tipo: "QUITACAO_FINANCEIRA" as const,
+      titulo: "Declaração de quitação financeira",
+      descricao: "Certidão de adimplência das mensalidades até a data corrente.",
+      finalidade: "Bolsas, convênios e comprovação de pagamentos.",
+      corpo:
+        "Certificamos que o(a) estudante {{aluno.nome}}, inscrito(a) sob o CPF {{aluno.cpf}} e RA {{aluno.ra}}, do curso de {{curso.nome}}, encontra-se com sua situação financeira regular e em dia com as obrigações contratuais até {{dataEmissao}}.\n\nEsta declaração atesta a ausência de débitos vencidos e pendências de mensalidades para fins de comprovação em estágios, transferência ou solicitação de financiamento estudantil.",
+    },
+    {
+      tipo: "CARTEIRINHA_ESTUDANTIL" as const,
+      titulo: "Carteirinha estudantil digital",
+      descricao: "Identificação estudantil com RA e validade vinculada à matrícula ativa.",
+      finalidade: "Acesso ao campus e meia-entrada.",
+      corpo:
+        "Documento de identificação estudantil válido enquanto a matrícula permanecer ativa. Autenticidade: {{codigoAutenticacao}}.",
+    },
+  ];
+
+  for (const modelo of modelosDocumento) {
+    await prisma.modeloDocumento.upsert({
+      where: {tipo: modelo.tipo},
+      update: {},
+      create: modelo,
+    });
+  }
+
   console.log(`✅ Admin: ${admin.email} (Senha: Admin@123456)`);
   console.log(`✅ Campi: ${sede.codigoPolo}, ${poloEad.codigoPolo}`);
   console.log("✅ 5 cursos PRESENCIAL (SEDE-REC) e 5 EAD (POLO-EAD)");
