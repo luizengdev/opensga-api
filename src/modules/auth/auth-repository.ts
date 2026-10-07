@@ -30,6 +30,26 @@ export const findUserById = async ({id}: {id: string}) => {
       ativo: true,
       aluno: {select: {id: true, ra: true}},
       professor: {select: {id: true, matricula: true, titulacao: true}},
+      responsavel: {
+        select: {
+          alunos: {
+            select: {
+              id: true,
+              ra: true,
+              user: {select: {nome: true, avatarUrl: true}},
+              matriculas: {
+                take: 1,
+                orderBy: {criadoEm: "desc"},
+                select: {
+                  status: true,
+                  periodoAtual: true,
+                  curso: {select: {nome: true}},
+                },
+              },
+            },
+          },
+        },
+      },
     },
   });
 };

@@ -132,10 +132,30 @@ Período corrente da API: ano civil atual; semestre `1` de janeiro a junho (`get
 | `PATCH /diario/avaliar`                                                              |         |  sim  | só se for titular  |  403  |
 | `GET /dashboard/admin`                                                               |         |  sim  |        403         |  403  |
 | `GET /dashboard/professor`                                                           |         |  403  |        sim         |  403  |
+| `GET /portal/contexto`, `POST /portal/ouvidoria`                                     |         |  403  |        403         |  sim  |
 
 **CA-RBAC-01.** Sem `Authorization`, toda rota protegida retorna 401.  
 **CA-RBAC-02.** Token de professor em rota ADMIN-only retorna 403.  
-**CA-RBAC-03.** Token de aluno além de `/auth/*` retorna 403.
+**CA-RBAC-03.** Token de aluno em CRUD da secretaria retorna 403. Leitura própria fica em `GET /portal/contexto`; protocolo próprio em `POST /portal/ouvidoria`.
+
+**CA-PORTAL-01.** `GET /portal/contexto` com JWT ALUNO devolve só o vínculo, diários, faturas e comunicados daquele aluno.  
+**CA-PORTAL-02.** Responsável só consulta dependente vinculado (`alunoId`); outro UUID responde 403.  
+**CA-PORTAL-03.** `POST /portal/ouvidoria` grava protocolo com `usuarioId` do JWT; sem fila administrativa.
+
+```gherkin
+@QA-PORTAL-01
+Cenário: Aluno lê o próprio contexto
+  Dado que estou autenticado como ALUNO
+  Quando solicito GET /api/v1/portal/contexto
+  Então a resposta é 200
+  E o corpo contém profile, matricula, disciplinas e faturas do próprio aluno
+
+@QA-PORTAL-02
+Cenário: Responsável não acessa aluno de outra guarda
+  Dado que estou autenticado como RESPONSAVEL
+  Quando solicito GET /api/v1/portal/contexto?alunoId=uuid-de-outro-aluno
+  Então a resposta é 403
+```
 
 ```gherkin
 @QA-RBAC-01

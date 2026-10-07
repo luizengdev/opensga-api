@@ -1,5 +1,6 @@
 import bcrypt from "bcrypt";
 
+import {StatusMatricula} from "../../generated/prisma/enums.js";
 import {
   findUserById,
   findUserByIdentifier,
@@ -52,7 +53,30 @@ export const fetchUserProfile = async ({userId}: {userId: string}) => {
     throw new AuthError("Usuário não encontrado.", 404);
   }
 
-  return profile;
+  return {
+    id: profile.id,
+    nome: profile.nome,
+    email: profile.email,
+    cpf: profile.cpf,
+    role: profile.role,
+    avatarUrl: profile.avatarUrl,
+    ativo: profile.ativo,
+    aluno: profile.aluno,
+    professor: profile.professor,
+    dependentes: (profile.responsavel?.alunos ?? []).map((aluno) => {
+      const matricula = aluno.matriculas[0];
+
+      return {
+        id: aluno.id,
+        nome: aluno.user.nome,
+        ra: aluno.ra,
+        curso: matricula?.curso.nome ?? "",
+        periodo: matricula?.periodoAtual ?? 0,
+        statusMatricula: matricula?.status ?? StatusMatricula.PRE_MATRICULADO,
+        avatarUrl: aluno.user.avatarUrl,
+      };
+    }),
+  };
 };
 
 export const changeOwnPassword = async ({

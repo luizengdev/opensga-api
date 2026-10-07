@@ -97,6 +97,8 @@ Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 - `POST /webhooks/stripe` — webhook Stripe (raw body, público, fora de `/api/v1`)
 - `/comunicados` e `/ouvidoria/reclamacoes` — mural e ouvidoria (`ADMIN`)
 - `/dashboard/admin` (`ADMIN`) e `/dashboard/professor` (`PROFESSOR`) — resumos do período (`anoLetivo` / `semestreLetivo` opcionais)
+- `GET /portal/contexto` (`ALUNO` + `RESPONSAVEL`) — contexto do aluno ou dependente (`alunoId` opcional); filtra diários, faturas, matriz, comunicados e protocolos próprios
+- `POST /portal/ouvidoria` (`ALUNO` + `RESPONSAVEL`) — abre protocolo em nome do JWT
 - `GET /health` — `{ status: "ok" }`, público, fora de `/api/v1`
 
 ### Plugins Fastify (não middlewares)
@@ -110,7 +112,7 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 - Rotas protegidas declaram esses hooks na própria rota. Login e `/health` permanecem públicos.
 - Exemplo: `onRequest: [app.authenticate]` e, quando a rota exige perfil, `preHandler: [app.authorize([Role.ADMIN, Role.PROFESSOR])]`.
 - `onRequest` roda antes de `preHandler`, então a autorização só executa depois do JWT válido e da conta ativa.
-- `GET /auth/me` devolve `ativo`, `aluno.{id, ra}` e `professor.{id, matricula, titulacao}` (nullable). Não omitir esses campos.
+- `GET /auth/me` devolve `ativo`, `aluno.{id, ra}`, `professor.{id, matricula, titulacao}` (nullable) e `dependentes[]` (sempre presente; preenchido para `RESPONSAVEL`). Não omitir esses campos.
 - `PATCH /auth/senha` (senha atual + nova) é o fluxo de primeiro acesso prometido no e-mail de matrícula.
 - Leituras por papel: **não duplicar CRUD**. Reutilizar o GET ADMIN e filtrar no service pelo JWT (`professor.userId = request.user.sub`); POST/PATCH/DELETE acadêmicos continuam `ADMIN`. Professor titular já é validado em `PATCH /diario/avaliar` e `POST /diario/fechar-semestre`.
 - Erros HTTP: `setErrorHandler` em `src/index.ts` responde `{ error, message? }`. Erros de domínio nos services usam a mesma forma. Não devolver o payload padrão do Fastify/Zod cru.
