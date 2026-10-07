@@ -60,6 +60,8 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 - Login: `POST /api/v1/auth/login` com `{ "identificador", "senha" }`.
 - Identificador aceito: e-mail, CPF, RA (aluno) ou matrícula funcional (professor).
 - JWT inválido, ausente ou expirado → **401** `{ error, message? }`.
+- Janela de sessão (claim `exp`): **20 minutos** para `ADMIN` e `PROFESSOR`; **30 minutos** para `ALUNO` e `RESPONSAVEL`. Vale no login e em `POST /auth/renovar`.
+- `POST /auth/renovar` (autenticado) devolve `{ token }` com a mesma janela do papel, para renovar a sessão enquanto houver atividade.
 - Conta `ativo = false` no login **e** em qualquer rota autenticada → **401**.
 - Papel sem permissão → **403**.
 
@@ -228,6 +230,7 @@ Cenário: Professor tenta criar campus
 - `/me` devolve `id`, `nome`, `email`, `cpf`, `role`, `avatarUrl`, `ativo`, `aluno.{id, ra}|null`, `professor.{id, matricula, titulacao}|null` e `dependentes[]` (sempre presente; preenchido para `RESPONSAVEL`).
 - Troca de senha exige senha atual correta.
 - Conta inativa não autentica e não usa JWT antigo.
+- Inatividade: JWT de `ADMIN`/`PROFESSOR` expira em 20 minutos; de `ALUNO`/`RESPONSAVEL` em 30 minutos. `POST /auth/renovar` desliza a janela se o JWT ainda for válido.
 
 ### Critérios de aceite
 
@@ -239,7 +242,10 @@ Cenário: Professor tenta criar campus
 **CA-AUTH-06.** `GET /auth/me` do aluno inclui `aluno.id`, `aluno.ra` e `dependentes` (array, vazio se não for responsável).  
 **CA-AUTH-07.** `PATCH /auth/senha` com senha atual correta → 200 `{ message }`; login seguinte só aceita a senha nova.  
 **CA-AUTH-08.** Senha atual incorreta → 400.  
-**CA-AUTH-09.** Usuário `ativo = false` no login → 401; JWT emitido antes da inativação também → 401.
+**CA-AUTH-09.** Usuário `ativo = false` no login → 401; JWT emitido antes da inativação também → 401.  
+**CA-AUTH-10.** Login `ADMIN` ou `PROFESSOR` emite JWT com `exp` de 20 minutos (± 60 s).  
+**CA-AUTH-11.** Login `ALUNO` ou `RESPONSAVEL` emite JWT com `exp` de 30 minutos (± 60 s).  
+**CA-AUTH-12.** `POST /auth/renovar` autenticado → 200 `{ token }` com a mesma janela do papel; sem JWT → 401.
 
 ```gherkin
 @QA-AUTH-01
@@ -284,6 +290,25 @@ Cenário: Conta inativada após o login
   E um ADMIN inativa esse usuário (PATCH /users/:id { "ativo": false })
   Quando o titular reutiliza o JWT em GET /auth/me
   Então a resposta é 401
+
+@QA-AUTH-10
+Cenário: Sessão administrativa expira em 20 minutos
+  Dado login de ADMIN ou PROFESSOR
+  Quando decodifico o JWT retornado
+  Então exp está a 20 minutos da emissão (± 60 s)
+
+@QA-AUTH-11
+Cenário: Sessão do aluno expira em 30 minutos
+  Dado login de ALUNO ou RESPONSAVEL
+  Quando decodifico o JWT retornado
+  Então exp está a 30 minutos da emissão (± 60 s)
+
+@QA-AUTH-12
+Cenário: Renovação deslizante da sessão
+  Dado um JWT válido
+  Quando envio POST /api/v1/auth/renovar
+  Então a resposta é 200
+  E o novo token tem a mesma janela de exp do papel
 ```
 
 ---

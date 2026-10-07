@@ -27,7 +27,7 @@ Este documento define a arquitetura, padrões de engenharia, stack tecnológica 
 - **Framework Web**: Fastify 5 com `fastify-type-provider-zod`.
 - **Validação de Schemas**: Zod 4.
 - **Banco de Dados & ORM**: PostgreSQL via Prisma 7 utilizando driver adapter `@prisma/adapter-pg`.
-- **Autenticação**: `@fastify/jwt` e `fastify-plugin` (`JWT_SECRET` e `JWT_EXPIRES_IN` via `src/lib/env.ts`). O Fastify não usa middleware no estilo Express: autenticação e RBAC são um plugin que decora a instância (`app.authenticate`, `app.authorize`) e as rotas aplicam esses hooks.
+- **Autenticação**: `@fastify/jwt` e `fastify-plugin` (`JWT_SECRET` e `JWT_EXPIRES_IN` via `src/lib/env.ts`). Login e `POST /auth/renovar` assinam o JWT com `20m` para `ADMIN`/`PROFESSOR` e `30m` para `ALUNO`/`RESPONSAVEL` (`src/lib/session.ts`); `JWT_EXPIRES_IN` é só o fallback do plugin. O Fastify não usa middleware no estilo Express: autenticação e RBAC são um plugin que decora a instância (`app.authenticate`, `app.authorize`) e as rotas aplicam esses hooks.
 - **Comunicação e Uploads**: Nodemailer (e-mails transacionais), Cloudinary (imagens/arquivos), Stripe (faturamento/mensalidades).
 - **Datas**: `dayjs` para manipular e formatar datas em runtime.
 
@@ -85,7 +85,7 @@ Todos os módulos seguem o mesmo conjunto de arquivos (`-route`, `-controller`, 
 
 Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 
-- `/auth` — login público; `GET /me` e `PATCH /auth/senha` autenticados
+- `/auth` — login público; `GET /me`, `POST /auth/renovar` e `PATCH /auth/senha` autenticados
 - `/users` — usuários, professores, alunos e responsáveis (`ADMIN`)
 - `/academic` — campi, cursos, disciplinas, matrizes, componentes (`ADMIN`); GET turmas também `PROFESSOR` (só as suas)
 - `/matriculas` — vínculo acadêmico (`ADMIN`); `GET /matriculas/:id/transferencia-preview` e `POST /matriculas/:id/transferencia` (transferência interna de curso ou polo/campus)
@@ -118,12 +118,13 @@ O Fastify isola cada `register` em um contexto encapsulado. Não existe pasta `s
 - `onRequest` roda antes de `preHandler`, então a autorização só executa depois do JWT válido e da conta ativa.
 - `GET /auth/me` devolve `ativo`, `aluno.{id, ra}`, `professor.{id, matricula, titulacao}` (nullable) e `dependentes[]` (sempre presente; preenchido para `RESPONSAVEL`). Não omitir esses campos.
 - `PATCH /auth/senha` (senha atual + nova) é o fluxo de primeiro acesso prometido no e-mail de matrícula.
+- `POST /auth/renovar` reemite o JWT com a mesma janela do papel (`20m` ADMIN/PROFESSOR, `30m` ALUNO/RESPONSAVEL) para sessão deslizante enquanto houver atividade.
 - Leituras por papel: **não duplicar CRUD**. Reutilizar o GET ADMIN e filtrar no service pelo JWT (`professor.userId = request.user.sub`); POST/PATCH/DELETE acadêmicos continuam `ADMIN`. Professor titular já é validado em `PATCH /diario/avaliar` e `POST /diario/fechar-semestre`.
 - Erros HTTP: `setErrorHandler` em `src/index.ts` responde `{ error, message? }`. Erros de domínio nos services usam a mesma forma. Não devolver o payload padrão do Fastify/Zod cru.
 
 ### Código Compartilhado
 
-- Centralizado em `src/lib/` com nomes curtos: `env.ts`, `db.ts`, `dayjs.ts`, `mailer.ts`, `stripe.ts`, `cloudinary.ts`.
+- Centralizado em `src/lib/` com nomes curtos: `env.ts`, `db.ts`, `dayjs.ts`, `session.ts`, `mailer.ts`, `stripe.ts`, `cloudinary.ts`.
 - Importar datas de `src/lib/dayjs.ts` (`import {dayjs} from "../../lib/dayjs.js"`), nunca direto de `"dayjs"`.
 - Prisma Client gerado em `src/generated/prisma/` e instanciado exclusivamente em `src/lib/db.ts`.
 
