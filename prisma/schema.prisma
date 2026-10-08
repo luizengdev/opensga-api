@@ -96,6 +96,17 @@ enum TipoDocumento {
   CARTEIRINHA_ESTUDANTIL
 }
 
+enum TipoTermoAbertura {
+  TURMA
+  INDIVIDUAL
+}
+
+enum StatusTermoAbertura {
+  PENDENTE
+  APROVADO
+  RECUSADO
+}
+
 // --- MODELOS DE USUÁRIOS E PERFIS ---
 
 model User {
@@ -115,6 +126,7 @@ model User {
   professor   Professor?
   responsavel Responsavel?
   reclamacoes Reclamacao[] @relation("ReclamacoesAbertas")
+  termosDecididos SolicitacaoTermoAbertura[] @relation("TermosDecididos")
 
   @@map("users")
 }
@@ -128,6 +140,7 @@ model Professor {
 
   user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
   turmas Turma[]
+  termos SolicitacaoTermoAbertura[]
 
   @@map("professores")
 }
@@ -271,6 +284,7 @@ model Turma {
   disciplina Disciplina     @relation(fields: [disciplinaId], references: [id], onDelete: Restrict)
   professor  Professor      @relation(fields: [professorId], references: [id], onDelete: Restrict)
   diarios    DiarioClasse[]
+  termos     SolicitacaoTermoAbertura[]
 
   @@map("turmas")
 }
@@ -313,6 +327,7 @@ model DiarioClasse {
 
   matricula Matricula @relation(fields: [matriculaId], references: [id], onDelete: Cascade)
   turma     Turma     @relation(fields: [turmaId], references: [id], onDelete: Cascade)
+  termos    SolicitacaoTermoAbertura[]
 
   @@unique([matriculaId, turmaId])
   @@map("diarios_classe")
@@ -408,6 +423,31 @@ model EmissaoDocumento {
   aluno  Aluno           @relation(fields: [alunoId], references: [id], onDelete: Cascade)
 
   @@map("emissoes_documento")
+}
+
+model SolicitacaoTermoAbertura {
+  id             String              @id @default(uuid()) @db.Uuid
+  tipo           TipoTermoAbertura
+  status         StatusTermoAbertura @default(PENDENTE)
+  professorId    String              @db.Uuid
+  turmaId        String?             @db.Uuid
+  diarioClasseId String?             @db.Uuid
+  notaAv         Decimal?            @db.Decimal(4, 2)
+  notaAvs        Decimal?            @db.Decimal(4, 2)
+  notaAv3        Decimal?            @db.Decimal(4, 2)
+  totalFaltas    Int?
+  criadoEm       DateTime            @default(now()) @db.Timestamptz()
+  decididoEm     DateTime?           @db.Timestamptz()
+  decididoPorId  String?             @db.Uuid
+
+  professor   Professor     @relation(fields: [professorId], references: [id], onDelete: Restrict)
+  turma       Turma?        @relation(fields: [turmaId], references: [id], onDelete: Restrict)
+  diario      DiarioClasse? @relation(fields: [diarioClasseId], references: [id], onDelete: Restrict)
+  decididoPor User?         @relation("TermosDecididos", fields: [decididoPorId], references: [id], onDelete: SetNull)
+
+  @@index([status, criadoEm])
+  @@index([professorId, status])
+  @@map("solicitacoes_termo_abertura")
 }
 
 model ParametroInstitucional {

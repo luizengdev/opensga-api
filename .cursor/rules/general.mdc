@@ -78,7 +78,8 @@ opensga-api/
     │   ├── communications/         # Comunicados institucionais e ouvidoria
     │   ├── documents/              # Modelos oficiais e emissão no portal do aluno
     │   ├── dashboard/              # KPIs leves ADMIN e PROFESSOR
-    │   └── settings/               # Parametrizações institucionais (período, notas, IES)
+    │   ├── settings/               # Parametrizações institucionais (período, notas, IES)
+    │   └── termos/                 # Termo de abertura (turma fechada ou AV/AVS/AV3/faltas)
     └── index.ts                    # Bootstrap, /health e error handler HTTP
 ```
 
@@ -91,6 +92,7 @@ Prefixos HTTP atuais (`/api/v1`, salvo `/health` e `/docs`):
 - `/academic` — campi, cursos, disciplinas, matrizes, componentes (`ADMIN`); GET turmas também `PROFESSOR` (só as suas)
 - `/matriculas` — vínculo acadêmico (`ADMIN`); `GET /matriculas/:id/transferencia-preview` e `POST /matriculas/:id/transferencia` (transferência interna de curso ou polo/campus)
 - `/diario` — enturmação `ADMIN`; GET lista/id `ADMIN`+`PROFESSOR` (professor filtrado pelo JWT); `PATCH /diario/avaliar` e `POST /diario/fechar-semestre` `ADMIN`+`PROFESSOR` titular
+- `/termos` — professor solicita reabertura de turma ou alteração individual de AV/AVS/AV3/faltas; `GET /termos` ADMIN+PROFESSOR (professor só as próprias); `PATCH /termos/:id/aprovar` e `PATCH /termos/:id/recusar` só `ADMIN`
 - `/financeiro/precos` — precificação por curso/modalidade (`ADMIN`); sync Stripe Product/Price
 - `/financeiro/faturas` — contas a receber (`ADMIN`)
 - `GET /api/catalogo` e `GET /api/v1/catalogo` — catálogo público de cursos com preço ativo
@@ -237,7 +239,7 @@ Ao implementar código neste projeto:
 3. Valide todas as entradas de rotas Fastify com schemas Zod tipados via `withTypeProvider<ZodTypeProvider>()`.
 4. Respeite todas as regras de sintaxe Zod 4 e convenções TypeScript listadas neste documento.
 5. Autenticação e RBAC ficam no plugin `src/plugins/authenticate.ts`. Proteja rotas com `onRequest` / `preHandler`. Não crie middlewares Express.
-6. Para o professor, abra só GET, `PATCH /diario/avaliar` e `POST /diario/fechar-semestre` (titular). Filtre pelo JWT; 403 se acessar turma/diário de outro docente.
+6. Para o professor, abra só GET, `PATCH /diario/avaliar`, `POST /diario/fechar-semestre` (titular) e solicitações de termo (`GET/POST /termos*`). Filtre pelo JWT; 403 se acessar turma/diário de outro docente. Aprovação de termo é só `ADMIN`.
 7. Stripe: SDK apenas em `src/lib/stripe.ts`. Precificação ADMIN em `/financeiro/precos` (valor em reais). Checkout e webhook conforme a seção 6.F. Webhook em plugin encapsulado com parser `Buffer` — não reutilizar o JSON parser global.
 
 ## 8. Git

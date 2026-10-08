@@ -1,21 +1,17 @@
-<div align="center">
-
 # OpenSGA API
 
 Sistema de Gestão Acadêmica para IES brasileiras — projeto de estudo profissional.
 
 API REST com identidade, currículo, matrícula, diário, financeiro (Stripe) e conformidade MEC.
 
-[![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white)](https://nodejs.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Fastify](https://img.shields.io/badge/Fastify-5-000000?logo=fastify&logoColor=white)](https://fastify.dev/)
-[![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?logo=prisma&logoColor=white)](https://www.prisma.io/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Stripe](https://img.shields.io/badge/Stripe-Checkout-635BFF?logo=stripe&logoColor=white)](https://stripe.com/)
+[Node.js](https://nodejs.org/)
+[TypeScript](https://www.typescriptlang.org/)
+[Fastify](https://fastify.dev/)
+[Prisma](https://www.prisma.io/)
+[PostgreSQL](https://www.postgresql.org/)
+[Stripe](https://stripe.com/)
 
 [Documentação](#documentação) · [O que demonstra](#o-que-este-projeto-demonstra) · [Arquitetura](#arquitetura) · [Instalação](#instalação) · [Demo](#acesso-de-demonstração)
-
-</div>
 
 ---
 
@@ -23,17 +19,14 @@ API REST com identidade, currículo, matrícula, diário, financeiro (Stripe) e 
 
 Contrato vivo (Scalar / OpenAPI):
 
-| Ambiente | URL |
-| :--- | :--- |
-| Local | http://localhost:3333/docs |
-| Produção | _cole aqui a URL pública do `/docs`_ |
+| Ambiente | Docs | Health |
+| :--- | :--- | :--- |
+| Local | [http://localhost:3333/docs](http://localhost:3333/docs) | [http://localhost:3333/health](http://localhost:3333/health) |
+| Produção (Render) | [https://opensga-api.onrender.com/docs](https://opensga-api.onrender.com/docs) | [https://opensga-api.onrender.com/health](https://opensga-api.onrender.com/health) |
 
-<!--
-Previews — salve as capturas em docs/assets/ e descomente:
+Webhook Stripe em produção: `POST https://opensga-api.onrender.com/webhooks/stripe` (secret do endpoint no Dashboard, não o `whsec_` do `stripe listen`).
 
-![Scalar — contrato OpenAPI](./docs/assets/scalar-docs.png)
-![Arquitetura / domínio](./docs/assets/arquitetura.png)
--->
+BRD e spec de testes (BDD `QA-*`): [`docs/`](./docs).
 
 ---
 
@@ -41,15 +34,13 @@ Previews — salve as capturas em docs/assets/ e descomente:
 
 Estudo de um SGA/ERP universitário: da matrícula à avaliação, com regras acadêmicas reais (MEC) e cobrança via Stripe.
 
-| Decisão | Por quê importa |
-| :--- | :--- |
-| Arquitetura hexagonal por módulo | Separação `route → controller → service → repository` |
-| RBAC com JWT | Papéis `ADMIN`, `PROFESSOR`, `ALUNO`, `RESPONSAVEL` |
-| Domínio acadêmico | Matriz curricular, Decreto 12.456/2026, extensão ≥ 10%, notas AV/AVS/AV3 |
-| Stripe no servidor | Catálogo, inscrição pública, Checkout (cartão/boleto) e webhook |
-| Contrato vivo | OpenAPI + Scalar em [`/docs`](http://localhost:3333/docs) |
-
-Contrato OpenAPI, BRD e spec de testes (BDD `QA-*`) ficam em [`docs/`](./docs).
+| Decisão                          | Por quê importa                                                          |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| Arquitetura hexagonal por módulo | Separação `route → controller → service → repository`                    |
+| RBAC com JWT                     | Papéis `ADMIN`, `PROFESSOR`, `ALUNO`, `RESPONSAVEL`                      |
+| Domínio acadêmico                | Matriz curricular, Decreto 12.456/2026, extensão ≥ 10%, notas AV/AVS/AV3 |
+| Stripe no servidor               | Catálogo, inscrição pública, Checkout (cartão/boleto) e webhook          |
+| Contrato vivo                    | OpenAPI + Scalar em [`/docs`](https://opensga-api.onrender.com/docs)     |
 
 ---
 
@@ -88,21 +79,20 @@ npm run dev
 
 | URL | Uso |
 | :--- | :--- |
-| http://localhost:3333/health | liveness |
-| http://localhost:3333/docs | Scalar / OpenAPI |
+| [http://localhost:3333/health](http://localhost:3333/health) | liveness local |
+| [http://localhost:3333/docs](http://localhost:3333/docs) | Scalar local |
+| [https://opensga-api.onrender.com/health](https://opensga-api.onrender.com/health) | liveness publicado |
+| [https://opensga-api.onrender.com/docs](https://opensga-api.onrender.com/docs) | Scalar publicado |
 
 Variáveis: [`.env-example`](./.env-example). Obrigatórias para subir: `DATABASE_URL` e `JWT_SECRET`. Stripe, SMTP e Cloudinary só entram se for exercitar cobrança ou e-mail.
 
-<details>
-<summary>Webhook Stripe (opcional)</summary>
+Webhook Stripe (opcional)
 
 ```bash
 stripe listen --forward-to localhost:3333/webhooks/stripe
 ```
 
-Cole o `whsec_...` em `STRIPE_WEBHOOK_SECRET` e reinicie a API. Sem isso, a matrícula não passa de `PRE_MATRICULADO` para `ATIVO`.
-
-</details>
+No ambiente local, cole o `whsec_...` em `STRIPE_WEBHOOK_SECRET` e reinicie a API. Em produção, cadastre o endpoint `https://opensga-api.onrender.com/webhooks/stripe` no Dashboard Stripe e use o secret daquele endpoint. Sem webhook válido, a matrícula não passa de `PRE_MATRICULADO` para `ATIVO`.
 
 ---
 
@@ -110,11 +100,11 @@ Cole o `whsec_...` em `STRIPE_WEBHOOK_SECRET` e reinicie a API. Sem isso, a matr
 
 Login: `POST /api/v1/auth/login` com `{ "identificador", "senha" }` (e-mail, CPF, RA ou matrícula). Header: `Authorization: Bearer <token>`.
 
-| Papel | Identificador | Senha |
-| :--- | :--- | :--- |
-| `ADMIN` | `testeadmin@opensga.dev` | `Admin@123456` |
-| `PROFESSOR` | `professor@opensga.dev` | `Professor@123456` |
-| `ALUNO` | `aluno@opensga.dev` | `Aluno@123456` |
+| Papel       | Identificador            | Senha              |
+| ----------- | ------------------------ | ------------------ |
+| `ADMIN`     | `testeadmin@opensga.dev` | `Admin@123456`     |
+| `PROFESSOR` | `professor@opensga.dev`  | `Professor@123456` |
+| `ALUNO`     | `aluno@opensga.dev`      | `Aluno@123456`     |
 
 O seed monta `SEDE-REC` (campus presencial) e `POLO-EAD` (polo EAD), 10 cursos, matrizes 2026.1, turmas por curso, diários e faturas.
 
@@ -122,22 +112,22 @@ O seed monta `SEDE-REC` (campus presencial) e `POLO-EAD` (polo EAD), 10 cursos, 
 
 ## Superfície da API
 
-Prefixo de negócio: **`/api/v1`**. Inscrição pública também em `/api` (sem versão).
+Prefixo de negócio: `/api/v1`. Inscrição pública também em `/api` (sem versão).
 
-| Área | Exemplos | Acesso |
-| :--- | :--- | :--- |
-| Auth | `/auth/login`, `/auth/me`, `/auth/senha` | público / JWT |
-| Usuários | `/users`, `/users/professores`, `/users/alunos` | `ADMIN` |
-| Acadêmico | `/academic/campi` … `/cursos` … `/matrizes` … `/turmas` | `ADMIN`¹ |
-| Matrícula | `/matriculas` | `ADMIN` |
-| Diário | `/diario`, `/diario/enturmar`, `/diario/avaliar`, `/diario/fechar-semestre` | `ADMIN` + titular |
-| Financeiro | `/financeiro/precos`, `/faturas` | `ADMIN` |
-| Ingresso | `GET /api/catalogo`, `POST /api/inscricao`, `POST /api/checkout` | público |
-| Webhook | `POST /webhooks/stripe` | assinatura Stripe |
-| Comunicação | `/comunicados`, `/ouvidoria/reclamacoes` | `ADMIN` (GET comunicados também `PROFESSOR`) |
-| Dashboard | `/dashboard/admin`, `/dashboard/professor` | papel correspondente |
-| Documentos | `/documentos/modelos` | `ADMIN` |
-| Portal | `GET /portal/contexto`, `GET /portal/documentos`, `POST /portal/documentos/emitir`, `POST /portal/ouvidoria` | `ALUNO` / `RESPONSAVEL` |
+| Área        | Exemplos                                                                                                     | Acesso                                       |
+| ----------- | ------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
+| Auth        | `/auth/login`, `/auth/me`, `/auth/senha`                                                                     | público / JWT                                |
+| Usuários    | `/users`, `/users/professores`, `/users/alunos`                                                              | `ADMIN`                                      |
+| Acadêmico   | `/academic/campi` … `/cursos` … `/matrizes` … `/turmas`                                                      | `ADMIN`¹                                     |
+| Matrícula   | `/matriculas`                                                                                                | `ADMIN`                                      |
+| Diário      | `/diario`, `/diario/enturmar`, `/diario/avaliar`, `/diario/fechar-semestre`                                  | `ADMIN` + titular                            |
+| Financeiro  | `/financeiro/precos`, `/faturas`                                                                             | `ADMIN`                                      |
+| Ingresso    | `GET /api/catalogo`, `POST /api/inscricao`, `POST /api/checkout`                                             | público                                      |
+| Webhook     | `POST /webhooks/stripe`                                                                                      | assinatura Stripe                            |
+| Comunicação | `/comunicados`, `/ouvidoria/reclamacoes`                                                                     | `ADMIN` (GET comunicados também `PROFESSOR`) |
+| Dashboard   | `/dashboard/admin`, `/dashboard/professor`                                                                   | papel correspondente                         |
+| Documentos  | `/documentos/modelos`                                                                                        | `ADMIN`                                      |
+| Portal      | `GET /portal/contexto`, `GET /portal/documentos`, `POST /portal/documentos/emitir`, `POST /portal/ouvidoria` | `ALUNO` / `RESPONSAVEL`                      |
 
 ¹ GET de turmas também para `PROFESSOR` (somente as suas).
 

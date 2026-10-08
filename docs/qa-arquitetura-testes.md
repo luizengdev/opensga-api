@@ -5,7 +5,7 @@
 | Versão             | 1.3.0                                                          |
 | Data               | 08/10/2026                                                     |
 | Público            | QA, Postman/Newman, Playwright (E2E do front), desenvolvimento |
-| Base HTTP          | `{{API_BASE_URL}}` (dev: `http://localhost:3333`)              |
+| Base HTTP          | `{{API_BASE_URL}}` (dev: `http://localhost:3333`; demo: `https://opensga-api.onrender.com`) |
 | Prefixo de negócio | `/api/v1`                                                      |
 | Contrato vivo      | Scalar `/docs` e OpenAPI `/swagger.json`                       |
 | Fonte de regras    | [brd.md](./brd.md) + implementação em `src/modules/`           |
@@ -134,6 +134,9 @@ Período institucional: `GET /parametrizacoes`. Se `periodoAutomatico` é true, 
 | `POST /diario/enturmar`, `DELETE /diario/:id`                                        |         |  sim  |        403         |         403         |
 | `PATCH /diario/avaliar`                                                              |         |  sim  | só se for titular  |         403         |
 | `POST /diario/fechar-semestre`                                                       |         |  sim  | só se for titular  |         403         |
+| `GET /termos`                                                                        |         | todas |     só as suas     |         403         |
+| `GET /termos/turmas`, `GET /termos/diarios`, `POST /termos/turma`, `POST /termos/individual` |         |  403  |        sim         |         403         |
+| `PATCH /termos/:id/aprovar`, `PATCH /termos/:id/recusar`                             |         |  sim  |        403         |         403         |
 | `GET /dashboard/admin`                                                               |         |  sim  |        403         |         403         |
 | `GET /dashboard/professor`                                                           |         |  403  |        sim         |         403         |
 | `GET /portal/contexto`, `GET /portal/documentos`, `POST /portal/documentos/emitir`, `POST /portal/ouvidoria` |         |  403  |        403         |         sim         |
@@ -743,6 +746,57 @@ Cenário: Professor de outra turma tenta lançar
   Então a resposta é 403
 ```
 
+### 10.4 Termo de abertura (`/termos`)
+
+**Regras.**
+
+1. Só o professor titular solicita. ADMIN não cria termo; ADMIN aprova ou recusa.
+2. Abertura de turma (`POST /termos/turma` `{ turmaIds[] }`): a turma precisa ter ao menos um diário com `semestreFechado`. Duplicidade `PENDENTE` na mesma turma → 409.
+3. Alteração individual (`POST /termos/individual`): só se a turma do aluno já estiver encerrada (`semestreFechado`); ao menos um de `notaAv`, `notaAvs`, `notaAv3`, `totalFaltas`. Segundo `PENDENTE` no mesmo diário → 409. Turma ainda em aberto → 409 (alterar no diário regular, `PATCH /diario/avaliar`). `GET /termos/diarios` devolve abertos e encerrados para o aviso na UI.
+4. `GET /termos` (ADMIN vê todas; professor só as próprias). Filtros: `status`, `tipo`, `professorId` (ADMIN), `criadoDe`, `criadoAte`.
+5. Aprovar `TURMA`: reabre diários fechados da turma (`semestreFechado=false`, `statusDisciplina=EM_ABERTO`, `chCumprida=0`, `mediaFinal=null`; notas preservadas).
+6. Aprovar `INDIVIDUAL`: persiste o lançamento; se o diário continuar fechado, reavalia o fechamento (RF soberano, NS, AV3, CH).
+7. Recusar: só muda o status; o diário permanece como está.
+8. Termo já decidido → 409.
+
+**CA-TERMO-01.** Titular em turma fechada → `POST /termos/turma` 201 com `status=PENDENTE` e `tipo=TURMA`.  
+**CA-TERMO-02.** Segunda solicitação `PENDENTE` da mesma turma → 409.  
+**CA-TERMO-03.** Titular busca aluno (`GET /termos/diarios?q=`) e envia `POST /termos/individual` com novo AV → 201.  
+**CA-TERMO-04.** ADMIN `PATCH /termos/:id/aprovar` em `TURMA` → diários da turma com `semestreFechado=false`.  
+**CA-TERMO-05.** ADMIN aprova `INDIVIDUAL` → nota/falta gravada no diário e status recalculado se o semestre permanecer fechado.  
+**CA-TERMO-06.** ADMIN recusa → 200 `RECUSADO` e o diário não muda.  
+**CA-TERMO-07.** Professor em `PATCH /termos/:id/aprovar` → 403. ADMIN em `POST /termos/turma` → 403.
+
+```gherkin
+@QA-TERMO-01
+Cenário: Professor solicita abertura de turma fechada
+  Dado que sou o titular e a turma tem diário com semestreFechado
+  Quando envio POST /api/v1/termos/turma com o id da turma
+  Então a resposta é 201
+  E status é PENDENTE
+  E tipo é TURMA
+
+@QA-TERMO-04
+Cenário: Secretaria aprova reabertura da turma
+  Dado um termo TURMA pendente
+  Quando o ADMIN envia PATCH /api/v1/termos/:id/aprovar
+  Então status é APROVADO
+  E os diários fechados da turma passam a semestreFechado false
+
+@QA-TERMO-05
+Cenário: Secretaria aprova alteração individual
+  Dado um termo INDIVIDUAL pendente com notaAv 7
+  Quando o ADMIN aprova
+  Então o diário persiste notaAv 7
+  E o status da disciplina é recalculado se o semestre continuar fechado
+
+@QA-TERMO-07
+Cenário: Professor não aprova termo
+  Dado um JWT de professor
+  Quando envio PATCH /api/v1/termos/:id/aprovar
+  Então a resposta é 403
+```
+
 ---
 
 ## 11. Dashboards
@@ -1051,7 +1105,7 @@ Pastas sugeridas (espelham este doc):
 4. `03-Users`
 5. `04-Academic` — campus (`tipo` CAMPI/POLO), curso (modalidade × unidade), disciplina (catálogo CH), matriz, componente, MEC, turma (`cursoId` + período)
 6. `05-Enrollment`
-7. `06-Grading` — enturmar, listar, avaliar (tabela de decisão), desenturmar
+7. `06-Grading` — enturmar, listar, avaliar (tabela de decisão), desenturmar, termo de abertura (`QA-TERMO-*`)
 8. `07-Dashboard`
 9. `08-Financial`
 10. `09-Communications`
@@ -1060,7 +1114,7 @@ Pastas sugeridas (espelham este doc):
 
 Convenção de request: nome = ID (`QA-AVA-01`). Tests (pm.test): status code + 2–3 asserts de negócio. Pre-request: `pm.environment.set` dos UUIDs criados.
 
-Ambientes: `local` (`baseUrl=http://localhost:3333`) e, depois, `staging`.
+Ambientes: `local` (`baseUrl=http://localhost:3333`) e `demo` (`https://opensga-api.onrender.com`). A suíte destrutiva (POST/PATCH/DELETE, fechamento de semestre, seed) roda só em `local`. No `demo` use login e GETs.
 
 ---
 
@@ -1073,6 +1127,7 @@ Ambientes: `local` (`baseUrl=http://localhost:3333`) e, depois, `staging`.
 | QA-MTZ-02/03, QA-MEC-*                           | Regulatório      | P0         |
 | QA-MAT-_, QA-ENT-_                               | Ingresso         | P0         |
 | QA-AVA-*                                         | Avaliação        | P0         |
+| QA-TERMO-*                                       | Termo de abertura | P0         |
 | QA-TUR-03/04, QA-DIA-_, QA-DASH-_                | Portal professor | P0         |
 | QA-DEL-*                                         | Integridade      | P1         |
 | QA-USR-_, QA-ACA-_, QA-FIN-_, QA-COM-_, QA-OUV-* | CRUD             | P1         |
