@@ -8,7 +8,8 @@
 
 | Versão | Data de Elaboração | Responsável | Perfil | Status |
 | :--- | :--- | :--- | :--- | :--- |
-| **1.2.0** | 07/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Homologado |
+| **1.3.0** | 08/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Homologado |
+| **1.2.0** | 07/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Substituído |
 | **1.1.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Substituído |
 | **1.0.0** | 01/10/2026 | Arquitetura de Soluções e Negócios | Analista de Negócios / Arquiteto de Software | Substituído |
 
@@ -56,10 +57,10 @@ Instituições de ensino superior frequentemente enfrentam gargalos críticos de
   Responsável pela gestão do diário de classe das turmas sob sua regência, registro de assiduidade (faltas) e lançamento das avaliações semestrais (AV, AVS e AV3).
 
 - **Aluno (`ALUNO`) — Estudante / Discente**  
-  Titular do vínculo acadêmico, identificado pelo Registro Acadêmico (RA). Consulta histórico escolar, frequenta as disciplinas da grade, acompanha sua evolução no curso e acessa as faturas financeiras emitidas.
+  Titular do vínculo acadêmico, identificado pelo Registro Acadêmico (RA). No portal, consulta matrícula, matriz, boletim (notas e faltas), faturas, documentos oficiais, comunicados e protocolos próprios de ouvidoria; troca a senha do primeiro acesso. Não cadastra grade nem altera dados civis — isso permanece na Secretaria.
 
 - **Responsável (`RESPONSAVEL`) — Pai, Mãe, Tutor ou Patrocinador Financeiro**  
-  Pessoa física vinculada ao estudante no ato da matrícula com grau de parentesco registrado. Possui credenciais exclusivas para acompanhar a situação acadêmica e gerenciar compromissos financeiros do dependente.
+  Pessoa física vinculada ao estudante no ato da matrícula com grau de parentesco registrado. Possui credenciais exclusivas e vê o mesmo recorte do dependente vinculado (acompanhamento acadêmico e financeiro), sem fila administrativa da ouvidoria.
 
 ---
 
@@ -154,8 +155,26 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 | Dashboards | `GET /dashboard/admin` e `GET /dashboard/professor` com KPIs do período letivo. |
 | Financeiro | Precificação por curso (`/financeiro/precos`, ADMIN): o valor é cadastrado no OpenSGA e sincronizado como Product/Price no Stripe. Emissão de faturas (`/financeiro/faturas`). Inscrição/checkout (`POST /api/inscricao`, `POST /api/checkout`) só abrem o Stripe se o valor devido agora for maior que zero; isenção (cupom 100% na 1ª parcela) conclui em `PRE_MATRICULADO` sem cartão e agenda fatura `PENDENTE` no ciclo seguinte. Quando há cobrança, o Checkout oferece cartão e boleto (voucher em 3 dias). Webhook `POST /webhooks/stripe` ativa matrícula em `checkout.session.completed` só se `payment_status=paid` (cartão) ou em `checkout.session.async_payment_succeeded` (boleto); boleto gerado (`completed` + `unpaid`) e `async_payment_failed` não efetivam a vaga. Também concilia `invoice.payment_succeeded` e `invoice.payment_failed`. |
 | Comunicação | CRUD de comunicados por público-alvo (`/comunicados`) e fluxo de ouvidoria: abrir, responder, fechar e excluir (`/ouvidoria/reclamacoes`). |
-| Portal do aluno | `GET /portal/contexto` (`ALUNO` / `RESPONSAVEL`): vínculo, diários, faturas, matriz, comunicados e protocolos do aluno ou dependente (`alunoId` só se vinculado). `GET /portal/documentos` lista modelos ativos; `POST /portal/documentos/emitir` interpola o texto da Secretaria. `POST /portal/ouvidoria` abre protocolo em nome do JWT. Sem CRUD desses papéis. |
+| Portal do aluno | Self-service descrito na seção 2.8. Contrato: `GET /portal/contexto` (`ALUNO` / `RESPONSAVEL`); documentos `GET /portal/documentos` e `POST /portal/documentos/emitir`; ouvidoria `POST /portal/ouvidoria`; senha `PATCH /auth/senha`. Sem CRUD desses papéis. |
 | Documentos oficiais | Catálogo `ModeloDocumento` (`ADMIN`: `GET/PATCH /documentos/modelos`). Declaração e carteirinha exigem matrícula `ATIVO`; quitação bloqueada se fatura `ATRASADA`. Impressão no browser. |
+
+### 2.8 Portal do Aluno e do Responsável (autoatendimento)
+
+Canal digital do vínculo acadêmico. O discente (e o responsável pelo dependente) acompanha a vida universitária sem passar pela fila da Secretaria para consultas de rotina. Cadastro, grade, preços e modelos de certidão continuam operação `ADMIN`.
+
+| Tela | Valor de negócio |
+| :--- | :--- |
+| Início | Resumo do período letivo vigente, avisos e atalhos para pendências (nota, fatura, documento). |
+| Minha matrícula | RA, curso, campus/polo, status do vínculo e enturmação do semestre institucional. Emissão da declaração de matrícula quando o status for `ATIVO`. |
+| Meu curso | Integralização da matriz (CH cumprida / CH do curso), componentes por semestre e média final quando o histórico já existir. |
+| Notas e frequência | Boletim do período: AV, AVS, **NS = MAX(AV, AVS)**, AV3, faltas versus limite percentual da CH e situação oficial do diário (`EM_ABERTO`, `APROVADO`, `RF`, `RN`). O resultado conclusivo só existe depois que a turma é fechada (`POST /diario/fechar-semestre`). O portal **não** simula fechamento no cliente. |
+| Faturas e pagamentos | Mensalidades com vencimento e status. Pagamento só quando houver valor > 0 e URL Stripe; fatura R$ 0 não abre Checkout. Recibo de quitação quando liquidada. |
+| Emissão de documentos | Catálogo liberado pela Secretaria (declaração, histórico parcial, quitação, carteirinha). Impressão no browser com código autenticador. |
+| Comunicados | Mural institucional filtrado pelo público-alvo (`ALUNO` / `RESPONSAVEL`). Sem categorias inventadas. |
+| Ouvidoria | Abertura e acompanhamento de protocolo **próprio** (financeiro, pedagógico, secretaria, infraestrutura ou ouvidoria geral). Sem fila da Ouvidoria Geral da IES. |
+| Perfil e senha | Dados cadastrais em leitura (nome, e-mail, CPF, RA). Troca da senha provisória do e-mail de matrícula. Atualização de dados civis exige atendimento presencial no polo. |
+
+O período exibido no boletim e na matrícula é o **período letivo institucional** (`GET /parametrizacoes`, formato `AAAA.S`). O campo `periodoAtual` da matrícula é o semestre do curso (1º, 2º, …), não o calendário da IES. Cortes de nota e teto de faltas vêm da mesma parametrização (padrão seed: NS ≥ 6,0, MF ≥ 5,0, faltas 25%).
 
 **Regras de exclusão (integridade referencial)**
 
@@ -341,6 +360,8 @@ O prefixo HTTP é `/api/v1`. A documentação técnica interativa fica em `/docs
 - **Disciplina Global**: Entidade curricular do catálogo (ex.: *Cálculo I*, *Comunicação Empresarial*), com carga e classificação padrão, reutilizável em múltiplos cursos. Semestre ideal pertence ao componente da matriz, não ao catálogo.
 - **Enturmação**: Ação de alocar um aluno formalmente matriculado em uma turma específica ofertada em um determinado semestre letivo.
 - **Matrícula**: Registro de vínculo contratual e acadêmico que associa um discente a um curso e a uma versão específica de matriz curricular.
+- **Período letivo institucional**: Calendário da IES (`AAAA.S`, ex.: 2026.2), definido em parametrizações. Diferente de `periodoAtual` da matrícula, que é o semestre do aluno no curso (1º, 2º, …).
+- **Portal do Aluno**: Autoatendimento digital do vínculo (matrícula, matriz, boletim, faturas, documentos, comunicados, ouvidoria e senha). Sem cadastro de grade pelo discente. O responsável vê o recorte do dependente vinculado.
 - **Matriz Curricular**: Versão pedagógica oficial do curso que estabelece a relação de disciplinas, cargas horárias, pré-requisitos, semestre ideal e modalidades de ensino aplicáveis aos alunos que ingressaram em seu período de vigência.
 - **Modalidades de Entrega**:
   - *Presencial Física*: Encontros regulares no polo ou campus universitário.

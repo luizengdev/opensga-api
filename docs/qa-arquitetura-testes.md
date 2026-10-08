@@ -2,8 +2,8 @@
 
 | Campo              | Valor                                                          |
 | :----------------- | :------------------------------------------------------------- |
-| Versão             | 1.2.0                                                          |
-| Data               | 07/10/2026                                                     |
+| Versão             | 1.3.0                                                          |
+| Data               | 08/10/2026                                                     |
 | Público            | QA, Postman/Newman, Playwright (E2E do front), desenvolvimento |
 | Base HTTP          | `{{API_BASE_URL}}` (dev: `http://localhost:3333`)              |
 | Prefixo de negócio | `/api/v1`                                                      |
@@ -21,7 +21,7 @@ Este documento é a **fonte de verdade para testes**. Use-o para execução manu
 3. Execute os critérios de aceite (CA) e os cenários Gherkin. Cada cenário tem um **ID de rastreio** para o Postman (`QA-AUTH-01`, etc.).
 4. Falha = divergência entre este spec e a API. Se a API estiver certa e o spec errado, atualize este arquivo.
 
-**Fora de escopo nesta versão:** upload Cloudinary, paginação, forgot-password, suíte automatizada no CI. Portal aluno/responsável entra na seção 5 (`QA-PORTAL-*`).
+**Fora de escopo nesta versão:** upload Cloudinary, paginação, forgot-password, suíte automatizada no CI. Portal aluno/responsável entra na seção 5 (`QA-PORTAL-*`). No frontend, o boletim **não** simula fechamento: a situação exibida é a do diário (`QA-PORTAL-04`).
 
 ---
 
@@ -147,7 +147,8 @@ Período institucional: `GET /parametrizacoes`. Se `periodoAutomatico` é true, 
 
 **CA-PORTAL-01.** `GET /portal/contexto` com JWT ALUNO devolve só o vínculo, diários, faturas e comunicados daquele aluno.  
 **CA-PORTAL-02.** Responsável só consulta dependente vinculado (`alunoId`); outro UUID responde 403.  
-**CA-PORTAL-03.** `POST /portal/ouvidoria` grava protocolo com `usuarioId` do JWT; sem fila administrativa.
+**CA-PORTAL-03.** `POST /portal/ouvidoria` grava protocolo com `usuarioId` do JWT; sem fila administrativa.  
+**CA-PORTAL-04.** Disciplinas do contexto trazem `statusDisciplina` e `semestreFechado` persistidos no diário. `EM_ABERTO` permanece até `POST /diario/fechar-semestre`. O portal do aluno **não** recalcula APROVADO/RN/RF como se o semestre tivesse sido fechado.
 
 **CA-DOC-01.** `GET /portal/documentos` com JWT ALUNO devolve só modelos `ativo`.  
 **CA-DOC-02.** `POST /portal/documentos/emitir` com `DECLARACAO_MATRICULA` ou `CARTEIRINHA_ESTUDANTIL` e matrícula diferente de `ATIVO` responde 400.  
@@ -168,6 +169,15 @@ Cenário: Responsável não acessa aluno de outra guarda
   Dado que estou autenticado como RESPONSAVEL
   Quando solicito GET /api/v1/portal/contexto?alunoId=uuid-de-outro-aluno
   Então a resposta é 403
+
+@QA-PORTAL-04
+Cenário: Boletim do portal usa a situação oficial do diário
+  Dado que estou autenticado como ALUNO
+  E minhas disciplinas do período ainda não tiveram o semestre fechado
+  Quando solicito GET /api/v1/portal/contexto
+  Então a resposta é 200
+  E cada disciplina em aberto tem statusDisciplina = EM_ABERTO e semestreFechado = false
+  E o cliente do portal exibe essa situação sem simular fechamento
 
 @QA-DOC-01
 Cenário: Aluno lista só documentos liberados
