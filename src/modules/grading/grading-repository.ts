@@ -264,6 +264,45 @@ export const listDiariosForFechamento = async (turmaId: string) => {
   });
 };
 
+export const saveDiarioAjusteAprovado = async ({
+  id,
+  notaAv,
+  notaAvs,
+  notaAv3,
+  notaSemestral,
+  mediaFinal,
+  habilitaAv3,
+  totalFaltas,
+  statusDisciplina,
+  chCumprida,
+}: {
+  id: string;
+  notaAv: number | null;
+  notaAvs: number | null;
+  notaAv3: number | null;
+  notaSemestral: number | null;
+  mediaFinal: number | null;
+  habilitaAv3: boolean;
+  totalFaltas: number;
+  statusDisciplina: StatusDisciplina;
+  chCumprida: number;
+}) => {
+  return prisma.diarioClasse.update({
+    where: {id},
+    data: {
+      notaAv: decimalOrNull(notaAv),
+      notaAvs: decimalOrNull(notaAvs),
+      notaAv3: decimalOrNull(notaAv3),
+      notaSemestral: decimalOrNull(notaSemestral),
+      mediaFinal: decimalOrNull(mediaFinal),
+      habilitaAv3,
+      totalFaltas,
+      statusDisciplina,
+      chCumprida,
+    },
+  });
+};
+
 export const closeDiariosAtomically = async (
   updates: Array<{
     id: string;

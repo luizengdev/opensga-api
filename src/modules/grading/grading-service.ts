@@ -13,6 +13,7 @@ import {
   findTurmaForPlacement,
   listDiarios,
   listDiariosForFechamento,
+  saveDiarioAjusteAprovado,
   saveDiarioLancamento,
 } from "./grading-repository.js";
 import type {
@@ -408,4 +409,78 @@ export const closeTurmaSemester = async ({
     fechados: saved.length,
     diarios: saved.map((diario, index) => mapAvaliacao(diario, updates[index].chTotal)),
   };
+};
+
+export const applyApprovedIndividualLancamento = async (input: IUpdateGradesInput) => {
+  const diario = await findDiarioById(input.diarioClasseId);
+
+  if (!diario) {
+    throw new GradingError("Registro de diário de classe não encontrado.", 404);
+  }
+
+  const componenteMatriz = diario.matricula.matrizCurricular.componentes.find(
+    (componente) => componente.disciplinaId === diario.turma.disciplinaId,
+  );
+
+  if (!componenteMatriz) {
+    throw new GradingError("A disciplina desta turma não compõe a matriz curricular vinculada à matrícula.", 400);
+  }
+
+  const parametros = await fetchParametrizacoes();
+  const regulamento = {
+    corteAprovacaoDireta: parametros.corteAprovacaoDireta,
+    corteMediaFinal: parametros.corteMediaFinal,
+    limiteFaltasPercentual: parametros.limiteFaltasPercentual,
+  };
+  const notaAv = resolveNota(input.notaAv, diario.notaAv);
+  const notaAvs = resolveNota(input.notaAvs, diario.notaAvs);
+  const notaAv3 = resolveNota(input.notaAv3, diario.notaAv3);
+  const faltas = input.totalFaltas !== undefined ? input.totalFaltas : diario.totalFaltas;
+  const lancamento = evaluateLancamento(
+    {
+      notaAv,
+      notaAvs,
+      notaAv3,
+      totalFaltas: faltas,
+      chTotal: componenteMatriz.chTotal,
+    },
+    regulamento,
+  );
+
+  if (!diario.semestreFechado) {
+    await saveDiarioLancamento({
+      id: input.diarioClasseId,
+      notaAv,
+      notaAvs,
+      notaAv3: lancamento.habilitaAv3 ? notaAv3 : null,
+      notaSemestral: lancamento.notaSemestral,
+      habilitaAv3: lancamento.habilitaAv3,
+      totalFaltas: faltas,
+    });
+    return;
+  }
+
+  const fechamento = evaluateFechamento(
+    {
+      notaAv,
+      notaAvs,
+      notaAv3: lancamento.habilitaAv3 ? notaAv3 : null,
+      totalFaltas: faltas,
+      chTotal: componenteMatriz.chTotal,
+    },
+    regulamento,
+  );
+
+  await saveDiarioAjusteAprovado({
+    id: input.diarioClasseId,
+    notaAv,
+    notaAvs,
+    notaAv3: lancamento.habilitaAv3 ? notaAv3 : null,
+    notaSemestral: fechamento.notaSemestral,
+    mediaFinal: fechamento.mediaFinal,
+    habilitaAv3: fechamento.habilitaAv3,
+    totalFaltas: faltas,
+    statusDisciplina: fechamento.statusDisciplina,
+    chCumprida: fechamento.chCumprida,
+  });
 };
