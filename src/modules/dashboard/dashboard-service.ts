@@ -1,5 +1,5 @@
 import {StatusMatricula} from "../../generated/prisma/enums.js";
-import {dayjs} from "../../lib/dayjs.js";
+import {fetchParametrizacoes} from "../settings/settings-service.js";
 import {
   countMatriculasByStatus,
   countOpenComplaints,
@@ -10,12 +10,12 @@ import {
 } from "./dashboard-repository.js";
 import type {IAdminDashboardOutput, IDashboardPeriodQuery, IProfessorDashboardOutput} from "./dashboard-schemas.js";
 
-const resolvePeriod = ({anoLetivo, semestreLetivo}: IDashboardPeriodQuery) => {
-  const now = dayjs();
+const resolvePeriod = async ({anoLetivo, semestreLetivo}: IDashboardPeriodQuery) => {
+  const institucional = await fetchParametrizacoes();
 
   return {
-    anoLetivo: anoLetivo ?? now.year(),
-    semestreLetivo: semestreLetivo ?? (now.month() < 6 ? 1 : 2),
+    anoLetivo: anoLetivo ?? institucional.anoLetivo,
+    semestreLetivo: semestreLetivo ?? institucional.semestreLetivo,
   };
 };
 
@@ -45,7 +45,7 @@ const averageOccupancy = (turmas: {capacidade: number; quantidadeDiarios: number
 };
 
 export const fetchAdminDashboard = async (query: IDashboardPeriodQuery): Promise<IAdminDashboardOutput> => {
-  const period = resolvePeriod(query);
+  const period = await resolvePeriod(query);
   const [matriculas, turmasNoPeriodo, ocupacoes, faturasPendentes, reclamacoesAbertas] = await Promise.all([
     countMatriculasByStatus(),
     countTurmasInPeriod(period),
@@ -73,7 +73,7 @@ export const fetchProfessorDashboard = async ({
   actorUserId,
   ...query
 }: IDashboardPeriodQuery & {actorUserId: string}): Promise<IProfessorDashboardOutput> => {
-  const period = resolvePeriod(query);
+  const period = await resolvePeriod(query);
   const [ocupacoes, lancamentosPendentes] = await Promise.all([
     listTurmaOccupancyInPeriod({...period, professorUserId: actorUserId}),
     countPendingGradeLaunches({...period, professorUserId: actorUserId}),

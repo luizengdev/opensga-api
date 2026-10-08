@@ -1,9 +1,20 @@
 import bcrypt from "bcrypt";
 
+import {ModalidadeCurso} from "../src/generated/prisma/enums.js";
 import {dayjs} from "../src/lib/dayjs.js";
 import {prisma} from "../src/lib/db.js";
 import {env} from "../src/lib/env.js";
+import {PARAMETRO_INSTITUCIONAL_ID, periodoLetivoDoCalendario} from "../src/lib/periodo-letivo.js";
 import {createStripeTuitionCatalog} from "../src/lib/stripe.js";
+import {collectViolacoesMatriz} from "../src/modules/academic/mec-2026.js";
+import {
+  alunoQuartoPeriodoEsw,
+  lancamentoHistoricoAprovado,
+  recuarSemestresLetivos,
+} from "./seed-data/aluno-quarto-periodo.js";
+import {matrizAdministracaoEad} from "./seed-data/matriz-administracao-ead.js";
+import {matrizEngenhariaSoftware} from "./seed-data/matriz-engenharia-software.js";
+import type {ILinhaMatrizSeed} from "./seed-data/tipos.js";
 
 interface IAlunoSeed {
   nome: string;
@@ -30,7 +41,29 @@ interface ICursoSeed {
   disciplina: {codigo: string; nome: string};
   professor: IProfessorSeed;
   alunos: IAlunoSeed[];
+  catalogo?: "ESW" | "ADM_EAD";
 }
+
+const catalogosCompletos: Record<"ESW" | "ADM_EAD", ILinhaMatrizSeed[]> = {
+  ESW: matrizEngenhariaSoftware,
+  ADM_EAD: matrizAdministracaoEad,
+};
+
+const horariosPresenciais = ["Seg 19h-22h", "Ter 19h-22h", "Qua 19h-22h", "Qui 19h-22h", "Sex 19h-22h"] as const;
+const salasPresenciais = [
+  "Bloco A - Sala 101",
+  "Bloco A - Sala 102",
+  "Bloco B - Sala 201",
+  "Bloco B - Sala 202",
+  "Lab. de Computação 1",
+] as const;
+const horariosEad = [
+  "Seg 19h-21h (síncrono)",
+  "Ter 19h-21h (síncrono)",
+  "Qua 19h-21h (síncrono)",
+  "Qui 19h-21h (síncrono)",
+  "Sex 19h-21h (síncrono)",
+] as const;
 
 const formatCpf = (sequence: number) => {
   const digits = String(sequence).padStart(11, "0");
@@ -45,6 +78,7 @@ const cursosSeed: ICursoSeed[] = [
     campusCodigo: "SEDE-REC",
     valorMensalidade: 1290,
     disciplina: {codigo: "CALC1", nome: "Cálculo I"},
+    catalogo: "ESW",
     professor: {
       nome: "Maria Silva",
       email: "professor@opensga.dev",
@@ -248,6 +282,27 @@ const cursosSeed: ICursoSeed[] = [
       {nome: "Isabela Duarte", email: "aluno.mkt.2@opensga.dev", cpf: formatCpf(30000000020), ra: "2026000020"},
     ],
   },
+  {
+    nome: "Administração",
+    codigoMec: "ADM-EAD",
+    modalidade: "EAD",
+    campusCodigo: "POLO-EAD",
+    valorMensalidade: 590,
+    disciplina: {codigo: "TEOADM", nome: "Teoria da Administração"},
+    catalogo: "ADM_EAD",
+    professor: {
+      nome: "Sérgio Palhares",
+      email: "professor.admead@opensga.dev",
+      cpf: formatCpf(11000000011),
+      matricula: "PROF-011",
+      titulacao: "Mestre",
+      departamento: "Gestão",
+    },
+    alunos: [
+      {nome: "Tatiana Reis", email: "aluno.admead.1@opensga.dev", cpf: formatCpf(30000000021), ra: "2026000021"},
+      {nome: "Vinícius Prado", email: "aluno.admead.2@opensga.dev", cpf: formatCpf(30000000022), ra: "2026000022"},
+    ],
+  },
 ];
 
 const ensureCampus = async ({
@@ -297,7 +352,7 @@ const ensureDisciplina = async ({
 
   return prisma.disciplina.upsert({
     where: {codigo},
-    update: carga,
+    update: {nome},
     create: {codigo, ...carga},
   });
 };
@@ -363,6 +418,144 @@ const ensureComponente = async ({
   });
 };
 
+const applyLinhasMatriz = async (matrizCurricularId: string, linhas: ILinhaMatrizSeed[]) => {
+  const disciplinas = await Promise.all(
+    linhas.map(async (linha) => {
+      const disciplina = await ensureDisciplina(linha);
+      await ensureComponente({
+        matrizCurricularId,
+        disciplinaId: disciplina.id,
+        semestreIdeal: linha.semestreIdeal,
+        tipo: linha.tipo,
+        tipoEntrega: linha.tipoEntrega,
+        chTotal: linha.chTotal,
+        chPresencial: linha.chPresencial,
+        chSincrona: linha.chSincrona,
+        chAssincrona: linha.chAssincrona,
+        chExtensao: linha.chExtensao,
+      });
+      return {linha, disciplina};
+    }),
+  );
+
+  const codigos = new Set(linhas.map((linha) => linha.codigo));
+  const componentes = await prisma.matrizComponente.findMany({
+    where: {matrizCurricularId},
+    include: {disciplina: {select: {codigo: true}}},
+  });
+
+  await Promise.all(
+    componentes
+      .filter((componente) => !codigos.has(componente.disciplina.codigo))
+      .map((componente) => prisma.matrizComponente.delete({where: {id: componente.id}})),
+  );
+
+  return disciplinas;
+};
+
+const assertMatrizConforme = async ({
+  matrizId,
+  modalidade,
+  nomeCurso,
+}: {
+  matrizId: string;
+  modalidade: "PRESENCIAL" | "EAD";
+  nomeCurso: string;
+}) => {
+  const componentes = await prisma.matrizComponente.findMany({
+    where: {matrizCurricularId: matrizId},
+  });
+
+  const {violacoes} = collectViolacoesMatriz({
+    modalidade: modalidade === "PRESENCIAL" ? ModalidadeCurso.PRESENCIAL : ModalidadeCurso.EAD,
+    componentes,
+  });
+
+  if (violacoes.length > 0) {
+    const detalhe = violacoes.map((violacao) => violacao.mensagem).join("; ");
+    throw new Error(`Matriz de ${nomeCurso} falhou na auditoria MEC: ${detalhe}`);
+  }
+};
+
+const codigoTurmaPeriodo = ({
+  codigoDisciplina,
+  codigoMec,
+  anoLetivo,
+  semestreLetivo,
+  namespaced,
+}: {
+  codigoDisciplina: string;
+  codigoMec: string;
+  anoLetivo: number;
+  semestreLetivo: number;
+  namespaced: boolean;
+}) => {
+  if (codigoDisciplina === "CALC1") {
+    return `CALC1-${anoLetivo}.${semestreLetivo}`;
+  }
+
+  if (namespaced) {
+    return `${codigoMec}-${codigoDisciplina}-${anoLetivo}.${semestreLetivo}`;
+  }
+
+  return `${codigoDisciplina}-${anoLetivo}.${semestreLetivo}`;
+};
+
+const ensureTurmaPeriodo = async ({
+  campusId,
+  cursoId,
+  disciplinaId,
+  professorId,
+  codigo,
+  anoLetivo,
+  semestreLetivo,
+  isPresencial,
+  indiceHorario,
+}: {
+  campusId: string;
+  cursoId: string;
+  disciplinaId: string;
+  professorId: string;
+  codigo: string;
+  anoLetivo: number;
+  semestreLetivo: number;
+  isPresencial: boolean;
+  indiceHorario: number;
+}) => {
+  const horario = isPresencial
+    ? horariosPresenciais[indiceHorario % horariosPresenciais.length]
+    : horariosEad[indiceHorario % horariosEad.length];
+  const salaOuLink = isPresencial
+    ? salasPresenciais[indiceHorario % salasPresenciais.length]
+    : "https://meet.opensga.dev/aula";
+
+  return prisma.turma.upsert({
+    where: {codigo},
+    update: {
+      campusId,
+      cursoId,
+      disciplinaId,
+      professorId,
+      anoLetivo,
+      semestreLetivo,
+      tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "SINCRONO_MEDIADO",
+    },
+    create: {
+      campusId,
+      cursoId,
+      disciplinaId,
+      professorId,
+      codigo,
+      anoLetivo,
+      semestreLetivo,
+      capacidade: 40,
+      horario,
+      salaOuLink,
+      tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "SINCRONO_MEDIADO",
+    },
+  });
+};
+
 const ensureProfessor = async (input: IProfessorSeed, senhaHash: string) => {
   const user = await prisma.user.upsert({
     where: {email: input.email},
@@ -416,6 +609,131 @@ const ensureAluno = async (input: IAlunoSeed, senhaHash: string) => {
     }));
 
   return {user, aluno};
+};
+
+const seedAlunoQuartoPeriodoEsw = async ({
+  campusId,
+  cursoId,
+  matrizId,
+  professorId,
+  codigoMec,
+  valorMensalidade,
+  anoLetivo,
+  semestreLetivo,
+  senhaAluno,
+}: {
+  campusId: string;
+  cursoId: string;
+  matrizId: string;
+  professorId: string;
+  codigoMec: string;
+  valorMensalidade: number;
+  anoLetivo: number;
+  semestreLetivo: number;
+  senhaAluno: string;
+}) => {
+  const periodoAtual = 4;
+  const ingresso = recuarSemestresLetivos({anoLetivo, semestreLetivo}, periodoAtual - 1);
+  const semestreIngresso = `${ingresso.anoLetivo}.${ingresso.semestreLetivo}`;
+  const {aluno} = await ensureAluno({...alunoQuartoPeriodoEsw}, senhaAluno);
+
+  const matriculaExistente = await prisma.matricula.findFirst({
+    where: {alunoId: aluno.id, cursoId, matrizCurricularId: matrizId},
+  });
+
+  const matricula =
+    matriculaExistente ??
+    (await prisma.matricula.create({
+      data: {
+        alunoId: aluno.id,
+        cursoId,
+        matrizCurricularId: matrizId,
+        status: "ATIVO",
+        periodoAtual,
+        semestreIngresso,
+      },
+    }));
+
+  if (
+    matricula.periodoAtual !== periodoAtual ||
+    matricula.semestreIngresso !== semestreIngresso
+  ) {
+    await prisma.matricula.update({
+      where: {id: matricula.id},
+      data: {periodoAtual, semestreIngresso},
+    });
+  }
+
+  const linhas = matrizEngenhariaSoftware.filter((linha) => linha.semestreIdeal <= periodoAtual);
+
+  await Promise.all(
+    linhas.map(async (linha, index) => {
+      const disciplina = await prisma.disciplina.findUnique({where: {codigo: linha.codigo}});
+
+      if (!disciplina) {
+        throw new Error(`Disciplina ${linha.codigo} não encontrada para o aluno do 4º período.`);
+      }
+
+      const periodoOferta = recuarSemestresLetivos(
+        {anoLetivo, semestreLetivo},
+        periodoAtual - linha.semestreIdeal,
+      );
+      const turma = await ensureTurmaPeriodo({
+        campusId,
+        cursoId,
+        disciplinaId: disciplina.id,
+        professorId,
+        codigo: codigoTurmaPeriodo({
+          codigoDisciplina: linha.codigo,
+          codigoMec,
+          anoLetivo: periodoOferta.anoLetivo,
+          semestreLetivo: periodoOferta.semestreLetivo,
+          namespaced: true,
+        }),
+        anoLetivo: periodoOferta.anoLetivo,
+        semestreLetivo: periodoOferta.semestreLetivo,
+        isPresencial: true,
+        indiceHorario: index,
+      });
+
+      const historico =
+        linha.semestreIdeal < periodoAtual
+          ? lancamentoHistoricoAprovado({index, chTotal: linha.chTotal})
+          : null;
+
+      await prisma.diarioClasse.upsert({
+        where: {
+          matriculaId_turmaId: {
+            matriculaId: matricula.id,
+            turmaId: turma.id,
+          },
+        },
+        update: historico ?? {},
+        create: {
+          matriculaId: matricula.id,
+          turmaId: turma.id,
+          ...(historico ?? {}),
+        },
+      });
+    }),
+  );
+
+  const descricaoFatura = `Mensalidade ${anoLetivo}.${semestreLetivo} · ${codigoMec}`;
+  const faturaExistente = await prisma.fatura.findFirst({
+    where: {alunoId: aluno.id, descricao: descricaoFatura},
+  });
+
+  if (!faturaExistente) {
+    await prisma.fatura.create({
+      data: {
+        alunoId: aluno.id,
+        descricao: descricaoFatura,
+        valor: valorMensalidade,
+        dataVencimento: dayjs(`${anoLetivo}-04-10`, "YYYY-MM-DD").toDate(),
+        status: "PENDENTE",
+      },
+    });
+  }
 };
 
 const ensurePrecoCurso = async ({
@@ -535,9 +853,7 @@ async function main() {
     chExtensao: 40,
   });
 
-  const agora = dayjs();
-  const anoLetivo = agora.year();
-  const semestreLetivo = agora.month() < 6 ? 1 : 2;
+  const {anoLetivo, semestreLetivo} = periodoLetivoDoCalendario();
   const semestreIngresso = `${anoLetivo}.${semestreLetivo}`;
 
   for (const item of cursosSeed) {
@@ -582,84 +898,96 @@ async function main() {
         },
       }));
 
-    const especifica = await ensureDisciplina({
-      ...item.disciplina,
-      tipo: "ESPECIFICO",
-      tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "ASSINCRONO_DIGITAL",
-      chTotal: 60,
-      chPresencial: isPresencial ? 60 : 8,
-      chSincrona: isPresencial ? 0 : 12,
-      chAssincrona: isPresencial ? 0 : 40,
-      chExtensao: 0,
-    });
+    let ofertasPrimeiroPeriodo: {codigo: string; disciplinaId: string}[];
 
-    await ensureComponente({
-      matrizCurricularId: matriz.id,
-      disciplinaId: etica.id,
-      semestreIdeal: 1,
-      tipo: "CORE_VIDA_CARREIRA",
-      tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "SINCRONO_MEDIADO",
-      chTotal: 60,
-      chPresencial: isPresencial ? 60 : 8,
-      chSincrona: isPresencial ? 0 : 12,
-      chAssincrona: isPresencial ? 0 : 40,
-      chExtensao: 0,
-    });
+    if (item.catalogo) {
+      const linhas = catalogosCompletos[item.catalogo];
+      const aplicadas = await applyLinhasMatriz(matriz.id, linhas);
+      await assertMatrizConforme({
+        matrizId: matriz.id,
+        modalidade: item.modalidade,
+        nomeCurso: `${item.nome} ${item.modalidade}`,
+      });
+      ofertasPrimeiroPeriodo = aplicadas
+        .filter((aplicada) => aplicada.linha.semestreIdeal === 1)
+        .map((aplicada) => ({codigo: aplicada.linha.codigo, disciplinaId: aplicada.disciplina.id}));
+    } else {
+      const especifica = await ensureDisciplina({
+        ...item.disciplina,
+        tipo: "ESPECIFICO",
+        tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "ASSINCRONO_DIGITAL",
+        chTotal: 60,
+        chPresencial: isPresencial ? 60 : 8,
+        chSincrona: isPresencial ? 0 : 12,
+        chAssincrona: isPresencial ? 0 : 40,
+        chExtensao: 0,
+      });
 
-    await ensureComponente({
-      matrizCurricularId: matriz.id,
-      disciplinaId: especifica.id,
-      semestreIdeal: 1,
-      tipo: "ESPECIFICO",
-      tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "ASSINCRONO_DIGITAL",
-      chTotal: 60,
-      chPresencial: isPresencial ? 60 : 8,
-      chSincrona: isPresencial ? 0 : 12,
-      chAssincrona: isPresencial ? 0 : 40,
-      chExtensao: 0,
-    });
+      await ensureComponente({
+        matrizCurricularId: matriz.id,
+        disciplinaId: etica.id,
+        semestreIdeal: 1,
+        tipo: "CORE_VIDA_CARREIRA",
+        tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "SINCRONO_MEDIADO",
+        chTotal: 60,
+        chPresencial: isPresencial ? 60 : 8,
+        chSincrona: isPresencial ? 0 : 12,
+        chAssincrona: isPresencial ? 0 : 40,
+        chExtensao: 0,
+      });
 
-    await ensureComponente({
-      matrizCurricularId: matriz.id,
-      disciplinaId: extensao.id,
-      semestreIdeal: 1,
-      tipo: "EXTENSAO",
-      tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "ASSINCRONO_DIGITAL",
-      chTotal: 40,
-      chPresencial: isPresencial ? 40 : 6,
-      chSincrona: isPresencial ? 0 : 8,
-      chAssincrona: isPresencial ? 0 : 26,
-      chExtensao: 40,
-    });
+      await ensureComponente({
+        matrizCurricularId: matriz.id,
+        disciplinaId: especifica.id,
+        semestreIdeal: 1,
+        tipo: "ESPECIFICO",
+        tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "ASSINCRONO_DIGITAL",
+        chTotal: 60,
+        chPresencial: isPresencial ? 60 : 8,
+        chSincrona: isPresencial ? 0 : 12,
+        chAssincrona: isPresencial ? 0 : 40,
+        chExtensao: 0,
+      });
+
+      await ensureComponente({
+        matrizCurricularId: matriz.id,
+        disciplinaId: extensao.id,
+        semestreIdeal: 1,
+        tipo: "EXTENSAO",
+        tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "ASSINCRONO_DIGITAL",
+        chTotal: 40,
+        chPresencial: isPresencial ? 40 : 6,
+        chSincrona: isPresencial ? 0 : 8,
+        chAssincrona: isPresencial ? 0 : 26,
+        chExtensao: 40,
+      });
+
+      ofertasPrimeiroPeriodo = [{codigo: item.disciplina.codigo, disciplinaId: especifica.id}];
+    }
 
     const {professor} = await ensureProfessor(item.professor, senhaProfessor);
-    const codigoTurma = `${item.disciplina.codigo}-${anoLetivo}.${semestreLetivo}`;
 
-    const turma = await prisma.turma.upsert({
-      where: {codigo: codigoTurma},
-      update: {
-        campusId: campus.id,
-        cursoId: curso.id,
-        disciplinaId: especifica.id,
-        professorId: professor.id,
-        anoLetivo,
-        semestreLetivo,
-        tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "SINCRONO_MEDIADO",
-      },
-      create: {
-        campusId: campus.id,
-        cursoId: curso.id,
-        disciplinaId: especifica.id,
-        professorId: professor.id,
-        codigo: codigoTurma,
-        anoLetivo,
-        semestreLetivo,
-        capacidade: 40,
-        horario: isPresencial ? "Seg 19h-22h" : "Ter 19h-21h (síncrono)",
-        salaOuLink: isPresencial ? "Bloco A - Sala 101" : "https://meet.opensga.dev/aula",
-        tipoEntrega: isPresencial ? "PRESENCIAL_FISICO" : "SINCRONO_MEDIADO",
-      },
-    });
+    const turmasPeriodo = await Promise.all(
+      ofertasPrimeiroPeriodo.map((oferta, indiceHorario) =>
+        ensureTurmaPeriodo({
+          campusId: campus.id,
+          cursoId: curso.id,
+          disciplinaId: oferta.disciplinaId,
+          professorId: professor.id,
+          codigo: codigoTurmaPeriodo({
+            codigoDisciplina: oferta.codigo,
+            codigoMec: item.codigoMec,
+            anoLetivo,
+            semestreLetivo,
+            namespaced: Boolean(item.catalogo),
+          }),
+          anoLetivo,
+          semestreLetivo,
+          isPresencial,
+          indiceHorario,
+        }),
+      ),
+    );
 
     const alunosDoCurso = await Promise.all(item.alunos.map((alunoSeed) => ensureAluno(alunoSeed, senhaAluno)));
 
@@ -682,21 +1010,25 @@ async function main() {
             },
           }));
 
-        await prisma.diarioClasse.upsert({
-          where: {
-            matriculaId_turmaId: {
-              matriculaId: matricula.id,
-              turmaId: turma.id,
-            },
-          },
-          update: {},
-          create: {
-            matriculaId: matricula.id,
-            turmaId: turma.id,
-            notaAv: index === 1 ? 7.5 : null,
-            notaSemestral: index === 1 ? 7.5 : null,
-          },
-        });
+        await Promise.all(
+          turmasPeriodo.map((turma) =>
+            prisma.diarioClasse.upsert({
+              where: {
+                matriculaId_turmaId: {
+                  matriculaId: matricula.id,
+                  turmaId: turma.id,
+                },
+              },
+              update: {},
+              create: {
+                matriculaId: matricula.id,
+                turmaId: turma.id,
+                notaAv: index === 1 ? 7.5 : null,
+                notaSemestral: index === 1 ? 7.5 : null,
+              },
+            }),
+          ),
+        );
 
         const descricaoFatura = `Mensalidade ${semestreIngresso} · ${item.codigoMec}`;
         const faturaExistente = await prisma.fatura.findFirst({
@@ -716,6 +1048,20 @@ async function main() {
         }
       }),
     );
+
+    if (item.catalogo === "ESW") {
+      await seedAlunoQuartoPeriodoEsw({
+        campusId: campus.id,
+        cursoId: curso.id,
+        matrizId: matriz.id,
+        professorId: professor.id,
+        codigoMec: item.codigoMec,
+        valorMensalidade: item.valorMensalidade,
+        anoLetivo,
+        semestreLetivo,
+        senhaAluno,
+      });
+    }
   }
 
   const comunicadoExistente = await prisma.comunicado.findFirst({
@@ -811,11 +1157,32 @@ async function main() {
     });
   }
 
+  await prisma.parametroInstitucional.upsert({
+    where: {id: PARAMETRO_INSTITUCIONAL_ID},
+    update: {},
+    create: {
+      id: PARAMETRO_INSTITUCIONAL_ID,
+      nomeIes: "OpenSGA",
+      siglaIes: "OSGA",
+      mantenedora: "",
+      cnpj: "",
+      anoLetivo,
+      semestreLetivo,
+      periodoAutomatico: true,
+      corteAprovacaoDireta: 6,
+      corteMediaFinal: 5,
+      limiteFaltasPercentual: 25,
+      percentualMinimoExtensao: 10,
+    },
+  });
+
   console.log(`✅ Admin: ${admin.email} (Senha: Admin@123456)`);
   console.log(`✅ Campi: ${sede.codigoPolo}, ${poloEad.codigoPolo}`);
-  console.log("✅ 5 cursos PRESENCIAL (SEDE-REC) e 5 EAD (POLO-EAD)");
-  console.log("✅ 10 professores / 20 alunos / matrizes 2026.1 com extensão ≥ 10%");
-  console.log(`✅ Turmas do período ${anoLetivo}.${semestreLetivo}`);
+  console.log("✅ 5 cursos PRESENCIAL (SEDE-REC) e 6 EAD (POLO-EAD, incl. Administração EAD)");
+  console.log("✅ 11 professores / 23 alunos / matrizes 2026.1 com extensão ≥ 10%");
+  console.log("✅ Matrizes completas (8 semestres): Engenharia de Software presencial e Administração EAD");
+  console.log(`✅ Turmas do 1º período ${anoLetivo}.${semestreLetivo} (CALC1 canônica sem nota no João)`);
+  console.log("✅ Aluno 4º período: aluno.esw.4@opensga.dev / RA 2025000001 (histórico 1–3 APROVADO)");
   console.log("✅ Professor canônico: professor@opensga.dev (Senha: Professor@123456)");
   console.log("✅ Aluno canônico: aluno@opensga.dev / RA 2026000001 (Senha: Aluno@123456)");
   console.log("✅ Demais logins: professor.{sigla}@opensga.dev e aluno.{sigla}.{1|2}@opensga.dev");

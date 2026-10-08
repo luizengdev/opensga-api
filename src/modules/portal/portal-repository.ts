@@ -107,7 +107,7 @@ export const listDiariosByMatriculaId = async ({matriculaId}: {matriculaId: stri
         },
       },
     },
-    orderBy: {turma: {codigo: "asc"}},
+    orderBy: [{turma: {anoLetivo: "desc"}}, {turma: {semestreLetivo: "desc"}}, {turma: {codigo: "asc"}}],
   });
 };
 
