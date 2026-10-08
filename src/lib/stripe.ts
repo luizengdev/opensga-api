@@ -2,10 +2,19 @@ import Stripe from "stripe";
 
 import {env} from "./env.js";
 
-export const stripe = new Stripe(env.STRIPE_SECRET_KEY);
+let stripeClient: Stripe | undefined;
+
+const getStripe = () => {
+  if (env.STRIPE_SECRET_KEY.length === 0) {
+    throw new Error("Stripe não configurado. Defina STRIPE_SECRET_KEY.");
+  }
+
+  stripeClient ??= new Stripe(env.STRIPE_SECRET_KEY);
+  return stripeClient;
+};
 
 export const constructStripeWebhookEvent = (payload: Buffer, signature: string) => {
-  return stripe.webhooks.constructEvent(payload, signature, env.STRIPE_WEBHOOK_SECRET);
+  return getStripe().webhooks.constructEvent(payload, signature, env.STRIPE_WEBHOOK_SECRET);
 };
 
 const toCents = (valor: number) => Math.round(valor * 100);
@@ -21,12 +30,12 @@ export const createStripeTuitionCatalog = async ({
   nome: string;
   valor: number;
 }) => {
-  const product = await stripe.products.create({
+  const product = await getStripe().products.create({
     name: `${nome} — ${modalidade}`,
     metadata: {cursoId, modalidade},
   });
 
-  const price = await stripe.prices.create({
+  const price = await getStripe().prices.create({
     product: product.id,
     currency: "brl",
     unit_amount: toCents(valor),
@@ -34,7 +43,7 @@ export const createStripeTuitionCatalog = async ({
     metadata: {cursoId, modalidade},
   });
 
-  await stripe.products.update(product.id, {default_price: price.id});
+  await getStripe().products.update(product.id, {default_price: price.id});
 
   return {
     stripeProductId: product.id,
@@ -55,7 +64,7 @@ export const rotateStripeTuitionPrice = async ({
   stripeProductId: string;
   valor: number;
 }) => {
-  const price = await stripe.prices.create({
+  const price = await getStripe().prices.create({
     product: stripeProductId,
     currency: "brl",
     unit_amount: toCents(valor),
@@ -63,8 +72,8 @@ export const rotateStripeTuitionPrice = async ({
     metadata: {cursoId, modalidade},
   });
 
-  await stripe.prices.update(stripePriceId, {active: false});
-  await stripe.products.update(stripeProductId, {default_price: price.id});
+  await getStripe().prices.update(stripePriceId, {active: false});
+  await getStripe().products.update(stripeProductId, {default_price: price.id});
 
   return {stripePriceId: price.id};
 };
@@ -78,13 +87,13 @@ export const setStripeTuitionCatalogActive = async ({
   stripePriceId: string;
   stripeProductId: string;
 }) => {
-  await stripe.prices.update(stripePriceId, {active: ativo});
-  await stripe.products.update(stripeProductId, {active: ativo});
+  await getStripe().prices.update(stripePriceId, {active: ativo});
+  await getStripe().products.update(stripeProductId, {active: ativo});
 };
 
 export const retrieveEnrollmentCoupon = async (couponId: string) => {
   try {
-    const coupon = await stripe.coupons.retrieve(couponId);
+    const coupon = await getStripe().coupons.retrieve(couponId);
 
     if (!coupon.valid) {
       return null;
@@ -115,7 +124,7 @@ export const createStripeEnrollmentCheckoutSession = async ({
 }) => {
   const metadata = {studentId, cursoId};
 
-  const session = await stripe.checkout.sessions.create({
+  const session = await getStripe().checkout.sessions.create({
     mode: "subscription",
     customer_email: email,
     client_reference_id: studentId,
@@ -145,6 +154,6 @@ export const createStripeEnrollmentCheckoutSession = async ({
 };
 
 export const retrieveStripeSubscriptionMetadata = async (subscriptionId: string) => {
-  const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+  const subscription = await getStripe().subscriptions.retrieve(subscriptionId);
   return subscription.metadata;
 };
