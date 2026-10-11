@@ -1069,29 +1069,22 @@ Cenário: Do campus à aprovação do aluno
 
 ## 17. Playwright (E2E do frontend)
 
-Os IDs `QA-*` são o nome do teste no front. Não invente cenário novo no Playwright se ele já existir aqui — implemente o Gherkin contra a UI.
+Os IDs `QA-*` deste documento são o nome do teste no front (`test('QA-AVA-01: …')`). Não invente cenário novo no Playwright se ele já existir aqui — implemente o Gherkin contra a UI. Specs em `opensga-frontend/e2e/<dominio>.spec.ts`. A suíte aponta para o Next em `http://localhost:3000` (`playwright.config.ts` → `use.baseURL` e `webServer` na porta 3000), independente do `baseUrl` da API/Postman (`http://localhost:3333`).
 
-| Convenção | Valor                                                                                               |
-| :-------- | :-------------------------------------------------------------------------------------------------- |
-| Arquivo   | `e2e/<dominio>.spec.ts` (auth, academic, enrollment, grading, dashboard…)                           |
-| Título    | `test('QA-AVA-01: aprovação direta', …)`                                                            |
-| Tag       | `@p0` nos IDs da seção 18; `@api-only` se ainda não houver tela                                     |
-| Auth      | `storageState` por persona (admin / professor / aluno) gerado no `global-setup` via login unificado |
-| Dados     | Seed da API + UUIDs criados no próprio spec (igual ao E2E da seção 15)                              |
+### Checklist de Implementação
 
-**Primeira suíte do front (críticos, nesta ordem):**
-
-1. `QA-AUTH-01` / `QA-AUTH-02` — login unificado e redirecionamento `/admin` vs `/professor`
-2. `QA-DASH-01` / `QA-DASH-05` — KPIs das home
-3. `QA-TUR-03` / `QA-DIA-01` — professor só vê as próprias turmas e diários
-4. `QA-AVA-01` a `QA-AVA-05` — motor de notas na tela de lançamento
-5. `QA-ENT-01` / `QA-ENT-03` — enturmação (tela ADMIN)
-6. `QA-MEC-01` / `QA-MEC-02` — auditoria MEC
-7. `QA-E2E-01` — jornada completa (último, mais lento)
-
-Professor **não** deve conseguir abrir telas de CRUD acadêmico (`QA-RBAC-02`). Aluno autenticado no interno: só `/auth` — qualquer outra rota de UI deve negar (`QA-RBAC-03`).
-
-Quando a tela ainda não existir, deixe o spec `test.skip` com o ID e o motivo (`@api-only`). Não apague o cenário.
+- Page Object Model (POM) estruturado para reaproveitamento de componentes;
+- Sempre utilizar TypeScript com tipagem estrita;
+- Validação rigorosa de campos obrigatórios, regras de negócio e mensagens de erro;
+- Estratégia de Locators Semânticos baseada na Árvore de Acessibilidade (getByRole, getByText, data-testid) para total compatibilidade com Playwright MCP e agentes de IA;
+- Uso obrigatório de Web-First Assertions (evitar totalmente esperas explícitas ou estáticas);
+- Isolamento total de testes utilizando Fixtures customizadas e Mocking de rede (page.route) para desacoplamento do back-end;
+- Evidências automáticas — screenshots e vídeos configurados exclusivamente em caso de falhas;
+- Trace Viewer — investigação detalhada de falhas com timeline e snapshots de rede;
+- Allure Report — relatórios categorizados por severity, epic e feature;
+- CI/CD com GitHub Actions — pipeline automático com execução paralela (Sharding) a cada push e PR;
+- Playwright Report e massa de evidências salvos como artifact no GitHub Actions com política de retenção;
+- Mecanismo de quarentena automática para testes instáveis (flaky tests).
 
 ---
 

@@ -654,10 +654,7 @@ const seedAlunoQuartoPeriodoEsw = async ({
       },
     }));
 
-  if (
-    matricula.periodoAtual !== periodoAtual ||
-    matricula.semestreIngresso !== semestreIngresso
-  ) {
+  if (matricula.periodoAtual !== periodoAtual || matricula.semestreIngresso !== semestreIngresso) {
     await prisma.matricula.update({
       where: {id: matricula.id},
       data: {periodoAtual, semestreIngresso},
@@ -674,10 +671,7 @@ const seedAlunoQuartoPeriodoEsw = async ({
         throw new Error(`Disciplina ${linha.codigo} não encontrada para o aluno do 4º período.`);
       }
 
-      const periodoOferta = recuarSemestresLetivos(
-        {anoLetivo, semestreLetivo},
-        periodoAtual - linha.semestreIdeal,
-      );
+      const periodoOferta = recuarSemestresLetivos({anoLetivo, semestreLetivo}, periodoAtual - linha.semestreIdeal);
       const turma = await ensureTurmaPeriodo({
         campusId,
         cursoId,
@@ -697,9 +691,7 @@ const seedAlunoQuartoPeriodoEsw = async ({
       });
 
       const historico =
-        linha.semestreIdeal < periodoAtual
-          ? lancamentoHistoricoAprovado({index, chTotal: linha.chTotal})
-          : null;
+        linha.semestreIdeal < periodoAtual ? lancamentoHistoricoAprovado({index, chTotal: linha.chTotal}) : null;
 
       await prisma.diarioClasse.upsert({
         where: {
@@ -798,7 +790,7 @@ async function main() {
     where: {email: "testeadmin@opensga.dev"},
     update: {},
     create: {
-      nome: "Luiz Almeida Alves Filho",
+      nome: "Teste Admin",
       email: "testeadmin@opensga.dev",
       cpf: "121.121.121-21",
       senhaHash: senhaAdmin,
