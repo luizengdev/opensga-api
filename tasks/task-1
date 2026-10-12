@@ -1,0 +1,92 @@
+# TASK-1: Sanitize de examples no OpenAPI / Scalar
+
+| Campo        | Valor                                                                 |
+| :----------- | :-------------------------------------------------------------------- |
+| Status       | Concluída                                                             |
+| Escopo       | Documentação OpenAPI apenas (não altera validação Zod nem Prisma)     |
+| Arquivos     | `src/lib/openapi-transform.ts`, `src/index.ts`                        |
+| Verificação  | `GET /swagger.json` e Scalar `/docs`                                  |
+
+---
+
+## Contexto do problema
+
+O registro do `@fastify/swagger` usava `transform: jsonSchemaTransform` puro. O Scalar herdava defaults ruins do JSON Schema gerado a partir do Zod:
+
+- campos `uuid` / `*Id` sem `example` legível;
+- inteiros com sentinels `Number.MIN_SAFE_INTEGER` (`-9007199254740991`) e `Number.MAX_SAFE_INTEGER` (`9007199254740991`) em `minimum` / `maximum`.
+
+Isso aparecia globalmente na documentação (`/docs`), sem impacto no runtime da API.
+
+---
+
+## Decisão de desenho (alinhada às regras do projeto)
+
+1. **Não** engordar o bootstrap em `src/index.ts` com a lógica recursiva.
+2. Extrair o transform para `src/lib/openapi-transform.ts` (código compartilhado em `src/lib/`, named exports, TypeScript sem `any`).
+3. Wrapper tipado como `typeof jsonSchemaTransform`: chama o transform oficial e sanitiza o resultado.
+4. Percorrer o schema **Fastify de rota** (`body`, `params`, `querystring`, `headers`, `response`), não só a raiz — senão body/response nunca recebem examples.
+5. Não anotar `.example` em todos os `*-schemas.ts` (alto custo de manutenção).
+
+---
+
+## Implementação
+
+### `src/lib/openapi-transform.ts`
+
+Exports:
+
+- `sanitizeOpenApiSchema` — percorre JSON Schema (`properties`, `items`, `oneOf` / `anyOf` / `allOf`).
+- `sanitizeFastifyRouteSchema` — entra nas partes Fastify da rota e chama o sanitize acima.
+- `openApiTransform` — usado pelo Swagger.
+
+Regras de mock (docs only):
+
+| Caso | Ação |
+| :--- | :--- |
+| `format === "uuid"` **ou** nome `id` / `*Id` (camelCase), exceto Stripe | `type: "string"`, `format: "uuid"`, `example` = `123e4567-e89b-12d3-a456-426614174000` |
+| `stripe*Id` | `example` amigável (`price_…` / `prod_…` / `cus_…`); **não** forçar `format: uuid` |
+| `integer` / `number` sem `example` | `40` se a key começa com `ch`; `0` para contagens (`quantidade*`, `total*`, `*count*`); senão `1` |
+| `minimum === Number.MIN_SAFE_INTEGER` | remove `minimum` |
+| `maximum === Number.MAX_SAFE_INTEGER` | remove `maximum` |
+| `minimum` / `maximum` reais do Zod (ex.: `chTotal.min(10)`) | **preservados** |
+
+Cuidados que a versão inline da task original errava:
+
+- `key.toLowerCase().endsWith("id")` gera falso positivo (`valid`, `paid`) — usar `id` ou sufixo camelCase `Id`.
+- Forçar UUID em `stripePriceId` / `stripeCustomerId` é incorreto.
+- Apagar todo `minimum` remove constraints úteis do Zod — só remover o sentinel.
+- UUID de exemplo deve ser RFC válido (3º grupo `12d3`, não `123d`).
+- Proibido `any`; usar type guards / `unknown`.
+
+### `src/index.ts`
+
+```ts
+import {openApiTransform} from "./lib/openapi-transform.js";
+
+await app.register(fastifySwagger, {
+  openapi: { /* info, securitySchemes, servers — inalterados */ },
+  transform: openApiTransform,
+});
+```
+
+Demais plugins, CORS, rotas e error handler permanecem intactos.
+
+---
+
+## Como verificar
+
+1. Subir a API (`npm run dev`).
+2. Abrir Scalar: `http://localhost:3333/docs`.
+3. Conferir no `GET /swagger.json` (ou na UI):
+   - `id` / `campusId` com example UUID limpo;
+   - `chTotal` com `example: 40` e `minimum: 10` (sem max/min sentinels);
+   - ausência de `-9007199254740991` / `9007199254740991` como mock.
+
+---
+
+## Fora de escopo
+
+- Alterar schemas Zod de domínio.
+- Mudar contrato consumido pelo frontend / Orval (só examples do OpenAPI).
+- Snapshot automatizado de `swagger.json` no CI.
