@@ -5,9 +5,10 @@ import jwt from "@fastify/jwt";
 import {fastifySwagger} from "@fastify/swagger";
 import fastifyApiReference from "@scalar/fastify-api-reference";
 import Fastify from "fastify";
-import {jsonSchemaTransform, serializerCompiler, validatorCompiler, ZodTypeProvider} from "fastify-type-provider-zod";
+import {serializerCompiler, validatorCompiler, ZodTypeProvider} from "fastify-type-provider-zod";
 
 import {env} from "./lib/env.js";
+import {openApiTransform} from "./lib/openapi-transform.js";
 import {academicRoutes} from "./modules/academic/academic-route.js";
 import {authRoutes} from "./modules/auth/auth-route.js";
 import {communicationsRoutes} from "./modules/communications/communications-route.js";
@@ -107,7 +108,7 @@ await app.register(fastifySwagger, {
       },
     ],
   },
-  transform: jsonSchemaTransform,
+  transform: openApiTransform,
 });
 
 await app.register(fastifyApiReference, {
